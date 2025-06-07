@@ -1,6 +1,4 @@
-import React from "react";
-
-/* Geoapify mode ↔︎ label */
+/* InputForm.js */
 const MODES = [
   { value: "drive", label: "Car 🚗" },
   { value: "transit", label: "Transit 🚌" },

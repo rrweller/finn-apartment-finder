@@ -1,3 +1,4 @@
+/*App.js*/
 import React, { useState } from "react";
 import InputForm from "./components/InputForm";
 import MapView from "./components/MapView";
