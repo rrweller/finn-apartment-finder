@@ -1,46 +1,41 @@
 """
-Flask backend for Commute-based Apartment Finder.
-Implements:
-    • POST /api/isolines
-    • GET  /api/listings
-    • GET  /api/reverse_geocode
+Flask backend – v1.2
 """
 import os
-from typing import List, Tuple
+from typing import List
 
-from flask import Flask, request, jsonify
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 from shapely.geometry import shape
 
-from finn_scraper import scrape_listings, KOMMUNE_TO_CODE
+from finn_scraper import KOMMUNE_TO_CODE, scrape_listings
 from geo_utils import (
-    geocode_address,
-    reverse_geocode,
     fetch_isoline,
-    polygons_from_featurecollection,
+    geocode_address,
     point_inside_any,
+    polygons_from_featurecollection,
+    reverse_geocode,
 )
+
+RAW_FILE = "listings_raw.txt"
+INSIDE_FILE = "listings_inside.txt"
 
 app = Flask(__name__)
 CORS(app)
 
-# ---------------------------------------------------------------------------#
-#  In-memory caches (cleared each restart)
-# ---------------------------------------------------------------------------#
-ISOLINE_CACHE = {}     # (address, minutes, mode) -> FeatureCollection
-LISTING_CACHE = {}     # (kommune_code, max_rent)  -> [listings]
-POLYGONS_LAST: List = []   # shapely polygons from last isoline request
+# Always recompute isolines (they’re cheap) – no cache now
+POLYGONS_LAST: List = []  # latest polygons for listing-filter
 
 
-# ---------------------------------------------------------------------------#
-#  Helpers
-# ---------------------------------------------------------------------------#
+# ─────────────────────────────────────────────────────────────────────────────
+#  Helper – find Finn kommune code
+# ─────────────────────────────────────────────────────────────────────────────
 def resolve_kommune_code(kommune: str) -> str:
     key = kommune.lower().strip()
     if key in KOMMUNE_TO_CODE:
         return KOMMUNE_TO_CODE[key]
 
-    # naive fallback: look once at finn redirect
+    # quick one-shot discovery
     import re, requests
 
     r = requests.get(
@@ -55,52 +50,49 @@ def resolve_kommune_code(kommune: str) -> str:
     return ""
 
 
-# ---------------------------------------------------------------------------#
-#  API ROUTES
-# ---------------------------------------------------------------------------#
-@app.route("/api/isolines", methods=["POST"])
+# ─────────────────────────────────────────────────────────────────────────────
+#  API
+# ─────────────────────────────────────────────────────────────────────────────
+@app.post("/api/isolines")
 def api_isolines():
     """
-    Body JSON: {
-        "locations":[
-            {"address":"Some st 1, Oslo","time":20,"mode":"drive"},
-            ...
-        ]
-    }
-    Returns GeoJSON FeatureCollection (union of all isolines).
-    Also records shapely polygons in POLYGONS_LAST for /api/listings use.
+    Body: {"locations":[{"address":..,"time":..,"mode":..}, ...]}
+    Returns GeoJSON FeatureCollection with property `mode` on each feature.
+    Stores shapely polygons for later filtering.
     """
     data = request.get_json(force=True)
     locs = data.get("locations", [])
     features, polygons = [], []
 
     for loc in locs:
-        address = loc.get("address", "").strip()
+        addr = loc.get("address", "").strip()
+        if not addr:
+            continue
         minutes = int(loc.get("time", 20))
         mode = loc.get("mode", "drive")
-        if not address:
+
+        coords = geocode_address(f"{addr}, Norway")
+        if not coords:
             continue
+        lat, lon = coords
+        fc = fetch_isoline(lat, lon, minutes, mode)
 
-        cache_key = (address, minutes, mode)
-        fc = ISOLINE_CACHE.get(cache_key)
-        if not fc:
-            coords = geocode_address(f"{address}, Norway")
-            if not coords:
-                continue
-            lat, lon = coords
-            fc = fetch_isoline(lat, lon, minutes, mode)
-            ISOLINE_CACHE[cache_key] = fc
+        for feat in fc.get("features", []):
+            feat.setdefault("properties", {})["mode"] = mode
+            features.append(feat)
 
-        features.extend(fc.get("features", []))
         polygons.extend(polygons_from_featurecollection(fc))
 
-    global POLYGONS_LAST
+    global POLYGONS_LAST, LAST_ISOLINE_HASH
     POLYGONS_LAST = polygons
+    LAST_ISOLINE_HASH = hash(str(features))  # simple fingerprint
+    print(f"[Iso] calc OK – {len(polygons)} polygon(s), modes:"
+          f" {set(f['properties']['mode'] for f in features)}")
 
     return jsonify({"type": "FeatureCollection", "features": features})
 
 
-@app.route("/api/listings")
+@app.get("/api/listings")
 def api_listings():
     kommune = request.args.get("kommune", "")
     rent = int(request.args.get("rent", "0") or 0)
@@ -113,40 +105,44 @@ def api_listings():
     if not kode:
         return jsonify({"error": "Unknown kommune"}), 400
 
-    cache_key = (kode, rent)
-    listings = LISTING_CACHE.get(cache_key)
-    if listings is None:
-        listings = scrape_listings(kode, rent)
-        LISTING_CACHE[cache_key] = listings
+    raw = scrape_listings(kode, rent)
 
-    # Filter by polygons
-    results = []
-    for lst in listings:
-        coords = geocode_address(f"{lst['address']}, Norway")
+    inside = []
+    for ad in raw:
+        coords = geocode_address(f"{ad['address']}, Norway")
         if not coords:
             continue
         lat, lon = coords
         if point_inside_any(lat, lon, POLYGONS_LAST):
-            lst["lat"], lst["lon"] = lat, lon
-            results.append(lst)
+            ad["lat"], ad["lon"] = lat, lon
+            inside.append(ad)
 
-    return jsonify(results)
+    # -----------  write debugging files  --------------------------------------------
+    def dump(path, ads):
+        with open(path, "w", encoding="utf-8") as f:
+            for a in ads:
+                f.write(f"{a['title']} | {a['price']} kr | {a['address']}\n")
 
+    dump(RAW_FILE, raw)
+    dump(INSIDE_FILE, inside)
 
-@app.route("/api/reverse_geocode")
+    print(f"[List] raw={len(raw)}  inside={len(inside)}  "
+          f"→ wrote {RAW_FILE} & {INSIDE_FILE}")
+
+    return jsonify(inside)
+
+@app.get("/api/reverse_geocode")
 def api_reverse():
     try:
         lat = float(request.args["lat"])
         lon = float(request.args["lon"])
     except (KeyError, ValueError):
-        return jsonify({"error": "lat & lon required"}), 400
-
+        return jsonify({"error": "lat&lon required"}), 400
     addr = reverse_geocode(lat, lon)
     if not addr:
-        return jsonify({"error": "Not found"}), 404
+        return jsonify({"error": "not found"}), 404
     return jsonify({"address": addr})
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(debug=True, port=port)
+    app.run(debug=True, port=int(os.getenv("PORT", 5000)))

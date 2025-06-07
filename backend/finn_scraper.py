@@ -1,83 +1,78 @@
 """
-Very small Finn.no scraper for 'Bolig til leie'.
-• Uses location taxonomy codes in the query-string.
-• Extracts title, address, price and link from the search result pages.
-This is deliberately lightweight and single-threaded to stay polite.
+Finn.no 'Bolig til leie' scraper – v1.3
+Works with both the legacy ads__unit markup and the new sf-search-ad markup.
 """
 import re
 import time
-from typing import List, Dict
+from typing import Dict, List
 
 import requests
 from bs4 import BeautifulSoup
 
-HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; CommuteMap/1.0)"}
+HEADERS = {"User-Agent": "CommuteFinder/1.3"}
 
-
-# --- Static mapping for common kommuner. Add more as you need -------------
 KOMMUNE_TO_CODE = {
-    # county Oslo (code 0.20061) is both county+kommune
     "oslo": "0.20061",
     "bergen": "1.20061.213",
     "trondheim": "1.20016.20225",
     "stavanger": "1.20011.2003",
     "fredrikstad": "1.20009.106",
 }
-# --------------------------------------------------------------------------
 
-
-PRICE_CLEAN = re.compile(r"[^\d]")
+PRICE_RX = re.compile(r"(\d[\d\s\u00A0]*kr)")
+DIGITS_ONLY = re.compile(r"[^\d]")
 
 
 def _parse_listing(article) -> Dict:
-    """
-    Extract data from <article> node in search results.
-    """
-    link_tag = article.find("a", href=re.compile(r"/realestate/lettings/ad\.html\?finnkode=\d+"))
-    if not link_tag:
+    """Return {title, address, price, url} or {} on failure."""
+    link = article.find("a", href=re.compile(r"/realestate/lettings/ad\.html"))
+    if not link:
         return {}
-    url = "https://www.finn.no" + link_tag["href"]
-    title = link_tag.get_text(strip=True)
+    url = "https://www.finn.no" + link["href"]
+    title = link.get_text(strip=True)
 
-    # The address and price usually live in div.ads__unit__content__keys
-    keys_div = article.find("div", class_=re.compile(r"ads__unit__content__keys"))
-    address, price = "", None
+    # v1 design: ads__unit__content__keys
+    addr = price = None
+    keys_div = article.find(
+        "div", class_=re.compile(r"(ads__unit__content__keys|sf-realestate-location)")
+    )
     if keys_div:
-        text = keys_div.get_text(separator="|", strip=True)
-        parts = text.split("|")
-        if parts:
-            address = parts[0]
-        # Find something that looks like '11 500 kr'
-        price_match = re.search(r"\d[\d\s\u00A0]*kr", text)
-        if price_match:
-            price_digits = PRICE_CLEAN.sub("", price_match.group())
-            price = int(price_digits) if price_digits else None
+        txt = keys_div.get_text(" ", strip=True)
+        # split on '∙' or commas → first chunk is usually street
+        addr = txt.split("∙")[0].split(",")[0].strip()
 
-    return {"title": title, "address": address, "price": price, "url": url}
+    # Fallback: brute-force search in all text
+    whole = article.get_text(" ", strip=True)
+    if not addr:
+        # first “,<city>” pattern
+        m = re.search(r"(.+,\s*[A-ZÆØÅa-zøæå\- ]+)", whole)
+        addr = m.group(1) if m else ""
+    m = PRICE_RX.search(whole)
+    if m:
+        price = int(DIGITS_ONLY.sub("", m.group()))
+
+    return {"title": title, "address": addr, "price": price, "url": url}
 
 
-def scrape_listings(kommune_code: str, max_rent: int, max_pages: int = 30) -> List[Dict]:
-    """
-    Iterate Finn search result pages and collect listings.
-    """
-    base_url = "https://www.finn.no/realestate/lettings/search.html"
-    listings = []
+def scrape_listings(location_code: str, max_rent: int, max_pages: int = 25) -> List[Dict]:
+    """Scrape Finn results, return list of dicts (may be empty)."""
+    base = "https://www.finn.no/realestate/lettings/search.html"
+    listings: List[Dict] = []
 
     for page in range(1, max_pages + 1):
-        params = {"location": kommune_code, "price_to": max_rent, "page": page}
-        resp = requests.get(base_url, params=params, headers=HEADERS, timeout=15)
-        if resp.status_code != 200:
+        params = {"location": location_code, "price_to": max_rent, "page": page}
+        r = requests.get(base, params=params, headers=HEADERS, timeout=15)
+        if r.status_code != 200:
+            print(f"[Finn] HTTP {r.status_code} – stopping scraping.")
             break
-        soup = BeautifulSoup(resp.text, "html.parser")
-        articles = soup.find_all("article", class_=re.compile(r"ads__unit|sf-search-ad"))
-        if not articles:
+        soup = BeautifulSoup(r.text, "html.parser")
+        arts = soup.find_all("article")
+        if not arts:
             break
-
-        for art in articles:
-            lst = _parse_listing(art)
+        for a in arts:
+            lst = _parse_listing(a)
             if lst:
                 listings.append(lst)
-
-        # polite pause so we don't hammer Finn's servers
-        time.sleep(1)
+        time.sleep(0.7)  # polite
+    print(f"[Finn] scraped {len(listings)} raw listings for code={location_code}")
     return listings

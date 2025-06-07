@@ -1,41 +1,36 @@
 """
-Utility helpers for geocoding, isoline generation and geometry checks.
-Handles     • forward geocoding     • reverse geocoding
-            • isoline polygons      • point-in-polygon tests
+Geo helpers: geocoding, reverse-geocoding, isolines, shapely
 """
-from functools import lru_cache
-from typing import Optional, Tuple, List
-
 import os
+from functools import lru_cache
+from typing import List, Optional, Tuple
+
 import requests
-from shapely.geometry import shape, Point
+from shapely.geometry import Point, shape
 
-GEOAPIFY_KEY = os.environ.get("GEOAPIFY_KEY", "").strip()
+GEOAPIFY_KEY = os.getenv("GEOAPIFY_KEY", "").strip()
 if not GEOAPIFY_KEY:
-    raise RuntimeError(
-        "Set environment variable GEOAPIFY_KEY with your key from https://www.geoapify.com/"
-    )
+    raise RuntimeError("Set GEOAPIFY_KEY in your environment.")
 
-HEADERS = {"User-Agent": "CommuteFinder/1.1"}
+HEADERS = {"User-Agent": "CommuteFinder/1.2"}
+
+ALLOWED_MODES = {"drive", "transit", "bicycle", "walk"}
 
 
-# ---------------------------------------------------------------------------#
-#  GEOCODING
-# ---------------------------------------------------------------------------#
+# ─────────────────────────────────────────────────────────────────────────────
+#  Geocoding
+# ─────────────────────────────────────────────────────────────────────────────
 @lru_cache(maxsize=256)
 def geocode_address(address: str) -> Optional[Tuple[float, float]]:
-    """Forward-geocode a string ⇒ (lat, lon).  Returns None on failure."""
-    params = {
-        "text": address,
-        "limit": 1,
-        "apiKey": GEOAPIFY_KEY,
-    }
+    params = {"text": address, "limit": 1, "apiKey": GEOAPIFY_KEY}
     r = requests.get(
-        "https://api.geoapify.com/v1/geocode/search", params=params, headers=HEADERS, timeout=10
+        "https://api.geoapify.com/v1/geocode/search",
+        params=params,
+        headers=HEADERS,
+        timeout=10,
     )
     r.raise_for_status()
-    data = r.json()
-    feats = data.get("features", [])
+    feats = r.json().get("features", [])
     if not feats:
         return None
     lon, lat = feats[0]["geometry"]["coordinates"]
@@ -43,62 +38,56 @@ def geocode_address(address: str) -> Optional[Tuple[float, float]]:
 
 
 def reverse_geocode(lat: float, lon: float) -> Optional[str]:
-    """Reverse-geocode coords ⇒ full formatted address string (or None)."""
-    params = {
-        "lat": lat,
-        "lon": lon,
-        "apiKey": GEOAPIFY_KEY,
-        "limit": 1,
-    }
+    params = {"lat": lat, "lon": lon, "limit": 1, "apiKey": GEOAPIFY_KEY}
     r = requests.get(
-        "https://api.geoapify.com/v1/geocode/reverse", params=params, headers=HEADERS, timeout=10
+        "https://api.geoapify.com/v1/geocode/reverse",
+        params=params,
+        headers=HEADERS,
+        timeout=10,
     )
     r.raise_for_status()
-    data = r.json()
-    feats = data.get("features", [])
+    feats = r.json().get("features", [])
     if not feats:
         return None
     return feats[0]["properties"].get("formatted")
 
 
-# ---------------------------------------------------------------------------#
-#  ISOLINES
-# ---------------------------------------------------------------------------#
-ALLOWED_MODES = {"drive", "walk", "bicycle", "transit"}
-
-
-def fetch_isoline(
-    lat: float, lon: float, minutes: int, mode: str = "drive"
-) -> dict:
+# ─────────────────────────────────────────────────────────────────────────────
+#  Isolines
+# ─────────────────────────────────────────────────────────────────────────────
+def fetch_isoline(lat: float, lon: float, minutes: int, mode: str = "drive") -> dict:
     """
-    Call Geoapify isoline API and return a GeoJSON FeatureCollection.
+    Call Geoapify Isoline API → GeoJSON FeatureCollection.
+    • adds traffic=approximated for all modes
+    • for public transit adds transfers=4  (allow up to four changes: bus→metro→train…)
     """
     mode = mode if mode in ALLOWED_MODES else "drive"
     params = {
         "lat": lat,
         "lon": lon,
         "type": "time",
+        "range": minutes * 60,
         "mode": mode,
-        "range": minutes * 60,  # seconds
+        "traffic": "approximated",
         "apiKey": GEOAPIFY_KEY,
     }
-    # For public transport isolines the API needs range_type=departure
     if mode == "transit":
         params["range_type"] = "departure"
-    r = requests.get("https://api.geoapify.com/v1/isoline", params=params, headers=HEADERS, timeout=20)
+        params["transfers"] = 4            # <-- NEW! multi-leg PT
+    url = "https://api.geoapify.com/v1/isoline"
+    print("[Iso] GET", url, params)        # debug: full request
+    r = requests.get(url, params=params, headers=HEADERS, timeout=25)
     r.raise_for_status()
-    return r.json()  # FeatureCollection
+    return r.json()
 
 
-# ---------------------------------------------------------------------------#
-#  SHAPELY HELPERS
-# ---------------------------------------------------------------------------#
+# ─────────────────────────────────────────────────────────────────────────────
+#  Shapely helpers
+# ─────────────────────────────────────────────────────────────────────────────
 def polygons_from_featurecollection(fc: dict) -> List:
-    """Convert a FeatureCollection to a list of Shapely geometries."""
     return [shape(feat["geometry"]) for feat in fc.get("features", [])]
 
 
 def point_inside_any(lat: float, lon: float, polys: List) -> bool:
-    """True if point is inside at least one polygon in `polys`."""
     pt = Point(lon, lat)
     return any(pt.within(poly) for poly in polys)
