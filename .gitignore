@@ -3,3 +3,7 @@ activate.bat
 /frontend/node_modules
 /venv
 /backend/debug
+/backend/cache
+*.bak
+*.dat
+*.dir

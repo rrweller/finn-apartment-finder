@@ -52,7 +52,7 @@ export default function App() {
   const handleAddRow = () =>
     setWorkLocs((p) => [
       ...p,
-      { address: "", time: 20, mode: "drive", lat: null, lon: null },
+      { address: "", time: 15, mode: "drive", lat: null, lon: null },
     ]);
   
   const handleRemoveRow = idx =>

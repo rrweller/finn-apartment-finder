@@ -1,4 +1,6 @@
 #geo_utils.py
+import datetime
+import shelve
 from functools import lru_cache
 from typing import List, Optional, Tuple
 
@@ -11,39 +13,65 @@ from shapely.geometry import Point, shape
 # ─── Geoapify key ────────────────────────────────────────────────────────────
 GEOAPIFY_KEY = os.getenv("GEOAPIFY_KEY", "").strip()
 
-# ─── transport modes allowed ────────────────────────────────────────────────
+# ─── transport modes allowed ─────────────────────────────────────────────────
 ALLOWED_MODES = {"drive", "bicycle", "walk", "transit", "approximated_transit"}
 
-# ─── two Nominatim pools → 2 req/s total (OSM policy-friendly) ──────────────
+# ─── Nominatim pools (2×0.5 s delay) ─────────────────────────────────────────
 geoA = Nominatim(user_agent="CommuteFinder/3A", timeout=5)
 geoB = Nominatim(user_agent="CommuteFinder/3B", timeout=5)
-
 limA = RateLimiter(geoA.geocode, min_delay_seconds=0.5)
 limB = RateLimiter(geoB.geocode, min_delay_seconds=0.5)
 revA = RateLimiter(geoA.reverse, min_delay_seconds=0.5)
 revB = RateLimiter(geoB.reverse, min_delay_seconds=0.5)
 
-
 def _pick(addr: str):
-    """Even-hash → pool A; odd-hash → pool B."""
     return limA if hash(addr) & 1 == 0 else limB
-
 
 def _pick_rev(lat: float):
     return revA if int(lat * 1e5) & 1 == 0 else revB
 
+# ─── persistent geocode cache ─────────────────────────────────────────────────
+CACHE_DB = os.path.join(os.path.dirname(__file__), "geocode_cache.db")
+TTL = datetime.timedelta(hours=24)
 
-# ─── forward / reverse geocode (cached) ──────────────────────────────────────
+@lru_cache(maxsize=1)
+def _open_cache():
+    return shelve.open(CACHE_DB)
+
+def _get_cached(address: str):
+    db = _open_cache()
+    rec = db.get(address)
+    if not rec:
+        return None
+    lat, lon, ts = rec
+    ts = datetime.datetime.fromisoformat(ts)
+    if datetime.datetime.utcnow() - ts < TTL:
+        return (lat, lon)
+    # stale
+    del db[address]
+    return None
+
+def _set_cached(address: str, lat: float, lon: float):
+    db = _open_cache()
+    db[address] = (lat, lon, datetime.datetime.utcnow().isoformat())
+    db.sync()
+
 @lru_cache(maxsize=4096)
 def geocode_address(address: str) -> Optional[Tuple[float, float]]:
+    # 1) try disk cache
+    cached = _get_cached(address)
+    if cached:
+        return cached
+    # 2) fetch from Nominatim
     try:
         loc = _pick(address)(address, country_codes="no", exactly_one=True)
         if loc:
-            return (loc.latitude, loc.longitude)
+            lat, lon = loc.latitude, loc.longitude
+            _set_cached(address, lat, lon)
+            return (lat, lon)
     except Exception:
         pass
     return None
-
 
 @lru_cache(maxsize=4096)
 def reverse_geocode(lat: float, lon: float) -> Optional[str]:
@@ -54,7 +82,6 @@ def reverse_geocode(lat: float, lon: float) -> Optional[str]:
     except Exception:
         pass
     return None
-
 
 # ─── isoline helper (Geoapify) ───────────────────────────────────────────────
 def fetch_isoline(lat: float, lon: float, minutes: int, mode: str) -> dict:
@@ -89,7 +116,6 @@ def fetch_isoline(lat: float, lon: float, minutes: int, mode: str) -> dict:
 # ─── shapely helpers ─────────────────────────────────────────────────────────
 def polygons_from_featurecollection(fc: dict) -> List:
     return [shape(f["geometry"]) for f in fc.get("features", [])]
-
 
 def point_inside_any(lat: float, lon: float, polys: List) -> bool:
     return any(Point(lon, lat).within(p) for p in polys)
