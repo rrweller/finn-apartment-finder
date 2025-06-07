@@ -104,16 +104,17 @@ def api_listings():
     if PREPARED_UNION is None:
         return jsonify({"error": "run isolines first"}), 400
 
-    # required filters
-    kommune    = request.args.get("kommune", "")
-    rent_min   = int(request.args.get("rent_min", "0")   or 0)
-    rent_max   = int(request.args.get("rent_max", "0")   or 0)
-    size_min   = int(request.args.get("size_min", "0")   or 0)
-    size_max   = int(request.args.get("size_max", "0")   or 0)
-    boligtype  = request.args.get("boligtype", "").strip().lower()
+    # pull in all filter args
+    kommune   = request.args.get("kommune", "")
+    rent_min  = int(request.args.get("rent_min", "0")  or 0)
+    rent_max  = int(request.args.get("rent_max", "0")  or 0)
+    size_min  = int(request.args.get("size_min", "0")  or 0)
+    size_max  = int(request.args.get("size_max", "0")  or 0)
+    boligtype = request.args.get("boligtype", "").strip().lower()
 
+    # sanity check
     if not kommune or rent_max <= 0:
-        return jsonify({"error": "kommune, rent_min & rent_max required"}), 400
+        return jsonify({"error": "kommune & valid rent_max required"}), 400
 
     code = resolve_kommune_code(kommune)
     if not code:
@@ -121,26 +122,38 @@ def api_listings():
 
     t0  = time.perf_counter()
     raw = scrape_listings(code, rent_max)
-    ts  = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    write_csv(DEBUG_DIR / f"{ts}_raw.csv", raw)
+    print(f"[List] harvested raw={len(raw)} ads (price_to={rent_max})")
 
-    # Filter by price, size, type, then by polygon
+    # stage counters
+    cnt_price = cnt_size = cnt_type = 0
+
     inside = []
     cache  = {}
+
     for ad in raw:
         price = ad.get("price") or 0
         size  = ad.get("size")  or 0
         typ   = (ad.get("type") or "").lower()
 
+        # price filter
         if price < rent_min or price > rent_max:
             continue
+        cnt_price += 1
+
+        # size_min
         if size_min and size < size_min:
             continue
+        # size_max
         if size_max and size > size_max:
             continue
+        cnt_size += 1
+
+        # type filter
         if boligtype and typ != boligtype:
             continue
+        cnt_type += 1
 
+        # geocode once per unique address
         addr = f"{ad['address']}, Norway"
         if addr not in cache:
             cache[addr] = geocode_address(addr)
@@ -148,14 +161,22 @@ def api_listings():
         if not coords:
             continue
         lat, lon = coords
+
+        # polygon test
         if PREPARED_UNION.contains(Point(lon, lat)):
             ad["lat"], ad["lon"] = lat, lon
             inside.append(ad)
 
-    write_csv(DEBUG_DIR / f"{ts}_inside.csv", inside)
-    print(f"[List] raw={len(raw)}  inside={len(inside)}  time={time.perf_counter()-t0:0.1f}s")
-    return jsonify(inside)
+    # debug output
+    print(f"[Filter] after price={cnt_price}, size={cnt_size}, type={cnt_type}, inside={len(inside)} "
+          f"in {time.perf_counter()-t0:0.1f}s")
 
+    # write CSVs (optional)
+    ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    write_csv(DEBUG_DIR / f"{ts}_raw.csv", raw)
+    write_csv(DEBUG_DIR / f"{ts}_inside.csv", inside)
+
+    return jsonify(inside)
 
 @app.get("/api/reverse_geocode")
 def api_reverse():
