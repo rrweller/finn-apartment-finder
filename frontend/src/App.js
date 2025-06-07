@@ -35,7 +35,7 @@ const KOMMUNE_OPTIONS = [
 export default function App() {
   /* State */
   const [workLocs, setWorkLocs] = useState([
-    { address: "", time: 20, mode: "drive", lat: null, lon: null },
+    { address: "", time: 15, mode: "drive", lat: null, lon: null },
   ]);
   const [kommune,   setKommune]   = useState("Oslo");
   const [rentMin,   setRentMin]   = useState(0);
@@ -54,6 +54,9 @@ export default function App() {
       ...p,
       { address: "", time: 20, mode: "drive", lat: null, lon: null },
     ]);
+  
+  const handleRemoveRow = idx =>
+    setWorkLocs(p => p.filter((_,i) => i !== idx));
 
   const activatePickMode = (idx) => setAwaitingPickRow(idx);
 
@@ -192,18 +195,23 @@ export default function App() {
                 </select>
               </div>
 
-              {/* Line 3: +address (only on last row) */}
-              {idx === workLocs.length - 1 && (
-                <div className="form-group">
-                  <button
-                    type="button"
-                    className="btn-add"
-                    onClick={handleAddRow}
-                  >
+              {/* Line 3: +address and –address buttons */}
+              <div className="form-group">
+                {idx === workLocs.length - 1 && (
+                  <button type="button" className="btn-add" onClick={handleAddRow}>
                     + address
                   </button>
-                </div>
-              )}
+                )}
+                {workLocs.length > 1 && (
+                  <button
+                    type="button"
+                    className="btn-remove"
+                    onClick={() => handleRemoveRow(idx)}
+                  >
+                    – address
+                  </button>
+                )}
+              </div>
             </div>
           ))}
 

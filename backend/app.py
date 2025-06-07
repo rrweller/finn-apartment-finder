@@ -60,7 +60,7 @@ def api_isolines():
     locs = request.get_json(force=True).get("locations", [])
     intersection, feats_out, modes = None, [], set()
 
-    for loc in locs:
+    for loc_idx, loc in enumerate(locs):
         minutes = int(loc.get("time", 20))
         mode    = loc.get("mode", "drive")
 
@@ -80,7 +80,8 @@ def api_isolines():
             print("[Iso] empty isoline")
             continue
         for f in feats:
-            f.setdefault("properties", {})["mode"] = mode
+            f.setdefault("properties", {})["mode"]  = mode
+            f["properties"]["locId"] = loc_idx      # ← tag with loc index
         feats_out.extend(feats)
         modes.add(mode)
 

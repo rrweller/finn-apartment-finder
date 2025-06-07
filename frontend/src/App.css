@@ -70,6 +70,13 @@ button {
   padding: 6px 10px;
   cursor: pointer;
 }
+.btn-remove {
+  background: var(--input-bg);
+  color: #e66767;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
 .btn-search {
   background: var(--btn-bg);
   color: var(--btn-text);
@@ -83,9 +90,6 @@ button {
 .leaflet-container.crosshair { cursor: crosshair; }
 
 /* ─── speech-bubble marker ────────────────────────────────────────────── */
-.price-bubble-icon {
-  /* host div; we’ll absolutely position the bubble inside it */
-}
 .price-bubble {
   position: absolute;
   left: 50%;
@@ -98,8 +102,10 @@ button {
   font-weight: bold;
   pointer-events: none;
   z-index: 1000;
+  border: 1px solid #000;        /* ← thin black border */
 }
-.price-bubble .bubble-tail {
+
+.bubble-tail {
   position: absolute;
   bottom: -6px;
   left: 50%;
