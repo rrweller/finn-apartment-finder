@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
+/*MapView.js*/
+import React, { useEffect, useMemo } from "react";
 import {
   MapContainer,
   TileLayer,
@@ -10,7 +11,19 @@ import {
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
-// Price pin
+//  ─── A nice set of clearly distinct colors ───────────────────────────────
+const ISO_COLORS = [
+  "#1f77b4", // blue
+  "#ff7f0e", // orange
+  "#2ca02c", // green
+  "#d62728", // red
+  "#9467bd", // purple
+  "#8c564b", // brown
+  "#e377c2", // pink
+  "#17becf", // cyan
+];
+
+// price-pin icon unchanged
 const PriceIcon = (price) =>
   L.divIcon({
     className: "price-marker",
@@ -18,7 +31,6 @@ const PriceIcon = (price) =>
     iconAnchor: [30, 15],
   });
 
-// Click‐to‐pick overlay
 function ClickCapture({ enabled, onPick }) {
   useMapEvents({
     click(e) {
@@ -34,41 +46,26 @@ export default function MapView({
   pickingActive,
   onPick,
 }) {
-  // 1) build a copy of isolineData with a feature‐index in properties
+  // Re‐index features so each has _idx
   const indexedIso = useMemo(() => {
     if (!isolineData) return null;
     return {
       type: "FeatureCollection",
-      features: isolineData.features.map((feat, i) => ({
-        ...feat,
-        properties: { ...feat.properties, _idx: i },
+      features: isolineData.features.map((f, i) => ({
+        ...f,
+        properties: { ...f.properties, _idx: i },
       })),
     };
   }, [isolineData]);
 
-  // 2) generate a random color for each feature‐index
-  const [isoColors, setIsoColors] = useState([]);
-  useEffect(() => {
-    if (!indexedIso) return;
-    setIsoColors(
-      indexedIso.features.map(
-        () =>
-          "#" +
-          Math.floor(Math.random() * 0xffffff)
-            .toString(16)
-            .padStart(6, "0")
-      )
-    );
-  }, [indexedIso]);
-
-  // 3) style function picks color by _idx
+  // styleFn now picks from our fixed palette
   const styleFn = (feat) => {
-    const idx = feat.properties._idx;
-    const color = isoColors[idx] || "#0d6efd";
+    const idx = feat.properties._idx || 0;
+    const color = ISO_COLORS[idx % ISO_COLORS.length];
     return { color, weight: 2, fillOpacity: 0.15 };
   };
 
-  // fix for default Leaflet icons
+  // Leaflet default icons setup
   useEffect(() => {
     delete L.Icon.Default.prototype._getIconUrl;
     L.Icon.Default.mergeOptions({
@@ -88,16 +85,15 @@ export default function MapView({
       <MapContainer
         center={center}
         zoom={11}
-        className={pickingActive ? "crosshair" : ""}
         style={{ height: "100%", width: "100%" }}
+        className={pickingActive ? "crosshair" : ""}
       >
         <TileLayer
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          attribution="&copy; OpenStreetMap"
+          attribution="&copy; OSM"
         />
 
         {indexedIso && (
-          /* key={Date.now()} forces a redraw when data changes */
           <GeoJSON key={Date.now()} data={indexedIso} style={styleFn} />
         )}
 
@@ -106,9 +102,7 @@ export default function MapView({
             key={l.url}
             position={[l.lat, l.lon]}
             icon={PriceIcon(l.price)}
-            eventHandlers={{
-              click: () => window.open(l.url, "_blank"),
-            }}
+            eventHandlers={{ click: () => window.open(l.url, "_blank") }}
           >
             <Tooltip direction="top" offset={[0, -10]} opacity={0.9}>
               {l.title}
@@ -121,3 +115,4 @@ export default function MapView({
     </div>
   );
 }
+

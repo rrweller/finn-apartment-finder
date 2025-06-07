@@ -1,4 +1,4 @@
-/* ─── RESET & GLOBALS ──────────────────────────────────────────────────── */
+/* RESET & GLOBALS */
 * {
   box-sizing: border-box;
 }
@@ -8,58 +8,98 @@ html, body, #root {
   font-family: system-ui, sans-serif;
 }
 
-/* ─── MAIN LAYOUT ─────────────────────────────────────────────────────── */
+/* LAYOUT */
 .layout-row {
   display: flex;
   height: 100%;
   width: 100%;
 }
-
-/* ─── SIDEBAR ─────────────────────────────────────────────────────────── */
 .sidebar {
-  width: 400px;                 /* enough room for full form */
+  width: 400px;
   background: #fafbfc;
   border-right: 1px solid #e0e0e0;
   padding: 16px;
   overflow-y: auto;
 }
-
-/* ─── MAP PANE ───────────────────────────────────────────────────────── */
 .map-pane {
-  position: relative;
   flex: 1;
+  position: relative;
 }
 .map-wrap {
   position: absolute !important;
   top: 0; right: 0; bottom: 0; left: 0;
 }
 
-/* ─── FORM STYLES ─────────────────────────────────────────────────────── */
+/* FORM */
 .form-wrap {
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
+.entry-block {
+  border-bottom: 1px solid #ddd;
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+}
 
-.form-row {
+.form-group {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
 }
 
-.form-wrap input,
-.form-wrap select,
-.form-wrap button {
+/* Label helpers */
+.label-inline {
+  min-width: 70px;
+  font-weight: bold;
+}
+.label-min,
+.label-dash { margin: 0 4px; }
+.label-unit { margin-left: 4px; }
+
+/* Inputs & selects */
+.input-address {
+  flex: 1;
   padding: 6px 8px;
   font-size: 14px;
 }
+.input-time,
+.input-small {
+  width: 60px;
+  padding: 6px 8px;
+  font-size: 14px;
+}
+.input-rent,
+.input-size {
+  width: 100px;      /* big enough for 6-7 digits */
+  padding: 6px 8px;
+  font-size: 14px;
+}
+.select-mode,
+.select-kommune,
+.select-type {
+  padding: 6px 8px;
+  font-size: 14px;
+  min-width: 120px;
+}
 
-.form-wrap button {
+/* Buttons */
+.btn-pin,
+.btn-add {
+  padding: 6px 10px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.btn-search {
+  padding: 8px 16px;
+  background: #0d6efd;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
   cursor: pointer;
 }
 
-/* ─── PRICE MARKERS ───────────────────────────────────────────────────── */
+/* PRICE MARKER */
 .price-marker {
   background: #6c3df4;
   color: #fff;
@@ -69,10 +109,10 @@ html, body, #root {
   border-radius: 4px;
   border: 1px solid #fff;
   white-space: nowrap;
-  box-shadow: 0 0 2px rgb(0 0 0 / 60%);
+  box-shadow: 0 0 2px rgba(0,0,0,0.6);
 }
 
-/* ─── PICK MODE CURSOR ────────────────────────────────────────────────── */
+/* PICK MODE CURSOR */
 .leaflet-container.crosshair {
   cursor: crosshair;
 }

@@ -2,15 +2,28 @@
 import React, { useState } from "react";
 import MapView from "./components/MapView";
 
-/** mode options with icons */
+// Transport mode options
 const MODE_OPTIONS = [
-  { value: "drive", label: "Car 🚗" },
+  { value: "drive",   label: "Car 🚗" },
   { value: "transit", label: "Transit 🚌" },
   { value: "bicycle", label: "Bike 🚴" },
-  { value: "walk", label: "Walk 🚶" },
+  { value: "walk",    label: "Walk 🚶" },
 ];
 
-/** kommune dropdown options */
+// Boligtype options
+const BOLIGTYPE_OPTIONS = [
+  { value: "",                   label: "All types" },
+  { value: "enebolig",           label: "Enebolig" },
+  { value: "garasje/parkering",  label: "Garasje/Parkering" },
+  { value: "hybel",              label: "Hybel" },
+  { value: "leilighet",          label: "Leilighet" },
+  { value: "rekkehus",           label: "Rekkehus" },
+  { value: "rom i bofellesskap", label: "Rom i bofellesskap" },
+  { value: "tomannsbolig",       label: "Tomannsbolig" },
+  { value: "andre",              label: "Andre" },
+];
+
+// Kommune options
 const KOMMUNE_OPTIONS = [
   "Oslo",
   "Bergen",
@@ -20,24 +33,25 @@ const KOMMUNE_OPTIONS = [
 ];
 
 export default function App() {
-  /* ─── state ───────────────────────────────────────────────────────────── */
+  /* State */
   const [workLocs, setWorkLocs] = useState([
     { address: "", time: 20, mode: "drive", lat: null, lon: null },
   ]);
-  const [kommune, setKommune] = useState("Oslo");
-  const [rent, setRent]       = useState(15000);
+  const [kommune,   setKommune]   = useState("Oslo");
+  const [rentMin,   setRentMin]   = useState(0);
+  const [rentMax,   setRentMax]   = useState(15000);
+  const [sizeMin,   setSizeMin]   = useState(0);
+  const [sizeMax,   setSizeMax]   = useState(0);
+  const [boligtype, setBoligtype] = useState("");
 
-  /* map + results state ────────────────────────────────────────────────── */
   const [isolineData, setIsolineData] = useState(null);
-  const [listings, setListings]       = useState([]);
-
-  /* which row is awaiting a map-click? */
+  const [listings,     setListings]   = useState([]);
   const [awaitingPickRow, setAwaitingPickRow] = useState(null);
 
-  /* ─── handlers ────────────────────────────────────────────────────────── */
+  /* Handlers */
   const handleAddRow = () =>
-    setWorkLocs((prev) => [
-      ...prev,
+    setWorkLocs((p) => [
+      ...p,
       { address: "", time: 20, mode: "drive", lat: null, lon: null },
     ]);
 
@@ -49,18 +63,17 @@ export default function App() {
       const res = await fetch(
         `/api/reverse_geocode?lat=${latlng.lat}&lon=${latlng.lng}`
       );
-      if (!res.ok) throw new Error("reverse geocode failed");
+      if (!res.ok) throw new Error();
       const { address } = await res.json();
-      setWorkLocs((prev) =>
-        prev.map((row, i) =>
+      setWorkLocs((p) =>
+        p.map((r, i) =>
           i === awaitingPickRow
-            ? { ...row, address, lat: latlng.lat, lon: latlng.lng }
-            : row
+            ? { ...r, address, lat: latlng.lat, lon: latlng.lng }
+            : r
         )
       );
-    } catch (e) {
-      console.error(e);
-      alert("Couldn’t reverse-geocode that point.");
+    } catch {
+      alert("Reverse-geocode failed.");
     } finally {
       setAwaitingPickRow(null);
     }
@@ -70,120 +83,137 @@ export default function App() {
     e.preventDefault();
     const payload = workLocs
       .filter((l) => l.address.trim())
-      .map((l) => ({
-        ...l,
-        time: Number(l.time),
-      }));
-
+      .map((l) => ({ ...l, time: Number(l.time) }));
     if (!payload.length) {
       alert("Add at least one work address.");
       return;
     }
 
-    try {
-      // 1) isolines
-      const isoRes = await fetch("/api/isolines", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ locations: payload }),
-      });
-      if (!isoRes.ok) throw new Error("Isoline error");
-      const iso = await isoRes.json();
-      if (!iso.features.length) {
-        alert(
-          "Could not build commute area – check address or Geoapify key."
-        );
-        return;
-      }
-      setIsolineData(iso);
-
-      // 2) listings
-      const lstRes = await fetch(
-        `/api/listings?kommune=${encodeURIComponent(kommune)}&rent=${rent}`
-      );
-      if (!lstRes.ok) {
-        const err = await lstRes.json();
-        alert(err.error || "Listing error");
-        return;
-      }
-      setListings(await lstRes.json());
-    } catch (err) {
-      console.error(err);
-      alert("Something went wrong – check console.");
+    // isolines
+    const isoRes = await fetch("/api/isolines", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ locations: payload }),
+    });
+    if (!isoRes.ok) {
+      alert("Isoline error");
+      return;
     }
+    const iso = await isoRes.json();
+    if (!iso.features.length) {
+      alert("Could not build commute area.");
+      return;
+    }
+    setIsolineData(iso);
+
+    // listings
+    const params = new URLSearchParams({
+      kommune,
+      rent_min: rentMin,
+      rent_max: rentMax,
+      size_min: sizeMin,
+      size_max: sizeMax,
+      boligtype,
+    });
+    const lstRes = await fetch(`/api/listings?${params}`);
+    if (!lstRes.ok) {
+      const err = await lstRes.json();
+      alert(err.error || "Listing error");
+      return;
+    }
+    setListings(await lstRes.json());
   };
 
-  /* ─── render ───────────────────────────────────────────────────────────── */
   return (
     <div className="layout-row">
-      {/* ─── Sidebar ───────────────────────────────────────────────────────── */}
       <aside className="sidebar">
         <form className="form-wrap" onSubmit={handleSearch}>
+          {/* ─── Work Address #1+ ─────────────────────────────────────────── */}
           {workLocs.map((row, idx) => (
-            <div key={idx} className="form-row">
-              <button
-                type="button"
-                title="Pick on map"
-                onClick={() => activatePickMode(idx)}
-              >
-                📍
-              </button>
-              <input
-                type="text"
-                placeholder="Work address"
-                value={row.address}
-                onChange={(e) =>
-                  setWorkLocs((prev) =>
-                    prev.map((r, i) =>
-                      i === idx ? { ...r, address: e.target.value } : r
-                    )
-                  )
-                }
-                required
-              />
-              <input
-                type="number"
-                min="1"
-                max="120"
-                value={row.time}
-                onChange={(e) =>
-                  setWorkLocs((prev) =>
-                    prev.map((r, i) =>
-                      i === idx ? { ...r, time: e.target.value } : r
-                    )
-                  )
-                }
-                style={{ width: "60px" }}
-              />
-              <span>min</span>
-              {idx === workLocs.length - 1 && (
-                <button type="button" onClick={handleAddRow}>
-                  + address
+            <div key={idx} className="entry-block">
+              {/* Line 1: pin + address + time */}
+              <div className="form-group">
+                <button
+                  type="button"
+                  className="btn-pin"
+                  onClick={() => activatePickMode(idx)}
+                >
+                  📍
                 </button>
-              )}
-              <select
-                value={row.mode}
-                onChange={(e) =>
-                  setWorkLocs((prev) =>
-                    prev.map((r, i) =>
-                      i === idx ? { ...r, mode: e.target.value } : r
+                <input
+                  type="text"
+                  placeholder="Work address"
+                  value={row.address}
+                  onChange={(e) =>
+                    setWorkLocs((p) =>
+                      p.map((r, i) =>
+                        i === idx ? { ...r, address: e.target.value } : r
+                      )
                     )
-                  )
-                }
-              >
-                {MODE_OPTIONS.map((m) => (
-                  <option key={m.value} value={m.value}>
-                    {m.label}
-                  </option>
-                ))}
-              </select>
+                  }
+                  required
+                  className="input-address"
+                />
+                <input
+                  type="number"
+                  min="1"
+                  max="120"
+                  value={row.time}
+                  onChange={(e) =>
+                    setWorkLocs((p) =>
+                      p.map((r, i) =>
+                        i === idx ? { ...r, time: e.target.value } : r
+                      )
+                    )
+                  }
+                  className="input-time"
+                />
+                <span className="label-min">min</span>
+              </div>
+
+              {/* Line 2: transport mode */}
+              <div className="form-group">
+                <select
+                  value={row.mode}
+                  onChange={(e) =>
+                    setWorkLocs((p) =>
+                      p.map((r, i) =>
+                        i === idx ? { ...r, mode: e.target.value } : r
+                      )
+                    )
+                  }
+                  className="select-mode"
+                >
+                  {MODE_OPTIONS.map((m) => (
+                    <option key={m.value} value={m.value}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Line 3: +address (only on last row) */}
+              {idx === workLocs.length - 1 && (
+                <div className="form-group">
+                  <button
+                    type="button"
+                    className="btn-add"
+                    onClick={handleAddRow}
+                  >
+                    + address
+                  </button>
+                </div>
+              )}
             </div>
           ))}
 
-          <div className="form-row">
+          {/* ─── Kommune ─────────────────────────────────────────────────────── */}
+          <div className="form-group">
+            <label className="label-inline">Kommune</label>
             <select
               value={kommune}
               onChange={(e) => setKommune(e.target.value)}
+              className="select-kommune"
             >
               {KOMMUNE_OPTIONS.map((k) => (
                 <option key={k} value={k}>
@@ -191,23 +221,79 @@ export default function App() {
                 </option>
               ))}
             </select>
+          </div>
 
+          {/* ─── Rent Min/Max ───────────────────────────────────────────────── */}
+          <div className="form-group">
+            <label className="label-inline">Rent</label>
             <input
               type="number"
-              min="1000"
-              step="500"
-              value={rent}
-              onChange={(e) => setRent(e.target.value)}
-              style={{ width: "100px" }}
+              min="0"
+              placeholder="Min kr"
+              value={rentMin}
+              onChange={(e) => setRentMin(e.target.value)}
+              className="input-rent"
             />
-            <span>kr / mnd</span>
+            <span className="label-dash">–</span>
+            <input
+              type="number"
+              min="0"
+              placeholder="Max kr"
+              value={rentMax}
+              onChange={(e) => setRentMax(e.target.value)}
+              className="input-rent"
+            />
+            <span className="label-unit">kr/mnd</span>
+          </div>
 
-            <button type="submit">Search</button>
+          {/* ─── Size Min/Max ───────────────────────────────────────────────── */}
+          <div className="form-group">
+            <label className="label-inline">Size</label>
+            <input
+              type="number"
+              min="0"
+              placeholder="Min m²"
+              value={sizeMin}
+              onChange={(e) => setSizeMin(e.target.value)}
+              className="input-size"
+            />
+            <span className="label-dash">–</span>
+            <input
+              type="number"
+              min="0"
+              placeholder="Max m²"
+              value={sizeMax}
+              onChange={(e) => setSizeMax(e.target.value)}
+              className="input-size"
+            />
+            <span className="label-unit">m²</span>
+          </div>
+
+          {/* ─── Boligtype ───────────────────────────────────────────────────── */}
+          <div className="form-group">
+            <label className="label-inline">Type</label>
+            <select
+              value={boligtype}
+              onChange={(e) => setBoligtype(e.target.value)}
+              className="select-type"
+            >
+              {BOLIGTYPE_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* ─── Search Button ───────────────────────────────────────────────── */}
+          <div className="form-group">
+            <button type="submit" className="btn-search">
+              Search
+            </button>
           </div>
         </form>
       </aside>
 
-      {/* ─── Map pane ───────────────────────────────────────────────────────── */}
       <main className="map-pane">
         <MapView
           isolineData={isolineData}
@@ -219,3 +305,4 @@ export default function App() {
     </div>
   );
 }
+
