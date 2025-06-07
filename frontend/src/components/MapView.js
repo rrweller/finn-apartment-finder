@@ -1,4 +1,3 @@
-/*MapView.js*/
 import React, { useEffect, useMemo } from "react";
 import {
   MapContainer,
@@ -11,25 +10,29 @@ import {
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
-//  ─── A nice set of clearly distinct colors ───────────────────────────────
+// A nice distinct palette for your isolines
 const ISO_COLORS = [
-  "#1f77b4", // blue
-  "#ff7f0e", // orange
-  "#2ca02c", // green
-  "#d62728", // red
-  "#9467bd", // purple
-  "#8c564b", // brown
-  "#e377c2", // pink
-  "#17becf", // cyan
+  "#bb86fc",
+  "#03dac6",
+  "#cf6679",
+  "#3700b3",
+  "#018786",
+  "#ff0266",
 ];
 
-// price-pin icon unchanged
-const PriceIcon = (price) =>
-  L.divIcon({
-    className: "price-marker",
-    html: `<span>${price.toLocaleString("nb-NO")} kr</span>`,
-    iconAnchor: [30, 15],
+// Create a speech-bubble icon with a bottom-center tail
+function PriceIcon(price) {
+  return L.divIcon({
+    className: "price-bubble-icon",
+    html: `
+      <div class="price-bubble">
+        <span>${price.toLocaleString("nb-NO")} kr</span>
+        <div class="bubble-tail"></div>
+      </div>`,
+    iconSize: [0, 0],        // let CSS size it
+    iconAnchor: [0, 0],      // we’ll position via CSS transform
   });
+}
 
 function ClickCapture({ enabled, onPick }) {
   useMapEvents({
@@ -40,17 +43,12 @@ function ClickCapture({ enabled, onPick }) {
   return null;
 }
 
-export default function MapView({
-  isolineData,
-  listings,
-  pickingActive,
-  onPick,
-}) {
-  // Re‐index features so each has _idx
-  const indexedIso = useMemo(() => {
+export default function MapView({ isolineData, listings, pickingActive, onPick }) {
+  // tag each feature with an index
+  const indexed = useMemo(() => {
     if (!isolineData) return null;
     return {
-      type: "FeatureCollection",
+      ...isolineData,
       features: isolineData.features.map((f, i) => ({
         ...f,
         properties: { ...f.properties, _idx: i },
@@ -58,14 +56,13 @@ export default function MapView({
     };
   }, [isolineData]);
 
-  // styleFn now picks from our fixed palette
-  const styleFn = (feat) => {
-    const idx = feat.properties._idx || 0;
-    const color = ISO_COLORS[idx % ISO_COLORS.length];
-    return { color, weight: 2, fillOpacity: 0.15 };
+  // pick stroke color by index
+  const styleFn = feat => {
+    const c = ISO_COLORS[feat.properties._idx % ISO_COLORS.length];
+    return { color: c, weight: 3, fillOpacity: 0.2 };
   };
 
-  // Leaflet default icons setup
+  // ensure default marker icons load
   useEffect(() => {
     delete L.Icon.Default.prototype._getIconUrl;
     L.Icon.Default.mergeOptions({
@@ -78,33 +75,32 @@ export default function MapView({
     });
   }, []);
 
-  const center = [59.9139, 10.7522];
-
   return (
     <div className="map-wrap">
       <MapContainer
-        center={center}
-        zoom={11}
-        style={{ height: "100%", width: "100%" }}
+        center={[59.9139, 10.7522]}
+        zoom={12}
+        style={{ width: "100%", height: "100%" }}
         className={pickingActive ? "crosshair" : ""}
       >
+        {/* Dark, but high-contrast, easy-read basemap from Stadia */}
         <TileLayer
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          attribution="&copy; OSM"
+          url="https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png"
+          attribution="&copy; Stadia Maps, &copy; OpenMapTiles &copy; OSM"
         />
 
-        {indexedIso && (
-          <GeoJSON key={Date.now()} data={indexedIso} style={styleFn} />
+        {indexed && (
+          <GeoJSON key={Date.now()} data={indexed} style={styleFn} />
         )}
 
-        {listings.map((l) => (
+        {listings.map(l => (
           <Marker
             key={l.url}
             position={[l.lat, l.lon]}
             icon={PriceIcon(l.price)}
             eventHandlers={{ click: () => window.open(l.url, "_blank") }}
           >
-            <Tooltip direction="top" offset={[0, -10]} opacity={0.9}>
+            <Tooltip direction="top" offset={[0, -12]} opacity={0.9}>
               {l.title}
             </Tooltip>
           </Marker>
@@ -115,4 +111,3 @@ export default function MapView({
     </div>
   );
 }
-

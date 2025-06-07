@@ -1,118 +1,111 @@
-/* RESET & GLOBALS */
-* {
-  box-sizing: border-box;
+/* ─── dark mode variables ───────────────────────────────────────────────── */
+:root {
+  --bg:            #121212;
+  --surface:       #1e1e1e;
+  --text:          #e0e0e0;
+  --text-secondary:#888;
+  --accent:        #bb86fc;
+  --input-bg:      #2c2c2c;
+  --input-border:  #444;
+  --btn-bg:        #bb86fc;
+  --btn-text:      #121212;
 }
+
+/* ─── global reset ─────────────────────────────────────────────────────── */
+* { box-sizing: border-box; }
 html, body, #root {
   height: 100%;
   margin: 0;
-  font-family: system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", sans-serif;
 }
 
-/* LAYOUT */
-.layout-row {
-  display: flex;
-  height: 100%;
-  width: 100%;
-}
+/* ─── layout ───────────────────────────────────────────────────────────── */
+.layout-row { display: flex; height: 100%; }
 .sidebar {
-  width: 400px;
-  background: #fafbfc;
-  border-right: 1px solid #e0e0e0;
-  padding: 16px;
+  width: 360px;
+  background: var(--surface);
+  padding: 24px;
   overflow-y: auto;
+  box-shadow: 2px 0 8px rgba(0,0,0,0.5);
 }
-.map-pane {
-  flex: 1;
-  position: relative;
-}
+.map-pane { flex:1; position: relative; }
 .map-wrap {
   position: absolute !important;
-  top: 0; right: 0; bottom: 0; left: 0;
+  top:0; right:0; bottom:0; left:0;
 }
 
-/* FORM */
-.form-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
+/* ─── form ─────────────────────────────────────────────────────────────── */
+.form-wrap { display:flex; flex-direction:column; gap:24px; }
 .entry-block {
-  border-bottom: 1px solid #ddd;
-  padding-bottom: 12px;
-  margin-bottom: 12px;
+  border-bottom: 1px solid #333;
+  padding-bottom:16px;
 }
-
 .form-group {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  display:flex; align-items:center; gap:12px; flex-wrap:wrap;
 }
-
-/* Label helpers */
 .label-inline {
-  min-width: 70px;
-  font-weight: bold;
+  min-width:80px;
+  color: var(--text-secondary);
 }
-.label-min,
-.label-dash { margin: 0 4px; }
-.label-unit { margin-left: 4px; }
+input, select {
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  color: var(--text);
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 14px;
+}
+.input-address { flex:1; }
+.input-time, .input-rent, .input-size { width:140px; }
 
-/* Inputs & selects */
-.input-address {
-  flex: 1;
-  padding: 6px 8px;
-  font-size: 14px;
+/* buttons */
+button {
+  font-size:14px; border:none; border-radius:6px;
 }
-.input-time,
-.input-small {
-  width: 60px;
-  padding: 6px 8px;
-  font-size: 14px;
-}
-.input-rent,
-.input-size {
-  width: 100px;      /* big enough for 6-7 digits */
-  padding: 6px 8px;
-  font-size: 14px;
-}
-.select-mode,
-.select-kommune,
-.select-type {
-  padding: 6px 8px;
-  font-size: 14px;
-  min-width: 120px;
-}
-
-/* Buttons */
-.btn-pin,
-.btn-add {
+.btn-pin, .btn-add {
+  background: var(--input-bg);
+  color: var(--accent);
   padding: 6px 10px;
-  font-size: 14px;
   cursor: pointer;
 }
 .btn-search {
-  padding: 8px 16px;
-  background: #0d6efd;
-  color: #fff;
-  border: none;
-  border-radius: 4px;
+  background: var(--btn-bg);
+  color: var(--btn-text);
+  padding: 10px 18px;
   cursor: pointer;
+  transition: background 0.2s;
 }
+.btn-search:hover { background: #a875e8; }
 
-/* PRICE MARKER */
-.price-marker {
-  background: #6c3df4;
-  color: #fff;
-  font-size: 12px;
-  font-weight: bold;
-  padding: 2px 6px;
-  border-radius: 4px;
-  border: 1px solid #fff;
+/* crosshair cursor while picking */
+.leaflet-container.crosshair { cursor: crosshair; }
+
+/* ─── speech-bubble marker ────────────────────────────────────────────── */
+.price-bubble-icon {
+  /* host div; we’ll absolutely position the bubble inside it */
+}
+.price-bubble {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%) translateY(-100%);
+  background: var(--accent);
+  color: var(--btn-text);
+  padding: 6px 10px;
+  border-radius: 12px;
   white-space: nowrap;
-  box-shadow: 0 0 2px rgba(0,0,0,0.6);
+  font-weight: bold;
+  pointer-events: none;
+  z-index: 1000;
 }
-
-/* PICK MODE CURSOR */
-.leaflet-container.crosshair {
-  cursor: crosshair;
+.price-bubble .bubble-tail {
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0; height: 0;
+  border-left: 6px solid transparent;
+  border-right:6px solid transparent;
+  border-top:6px solid var(--accent);
 }
