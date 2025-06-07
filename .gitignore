@@ -1,0 +1,4 @@
+activate.bat
+*.pyc
+/frontend/node_modules
+/venv
