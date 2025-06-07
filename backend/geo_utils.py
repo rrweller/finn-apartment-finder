@@ -63,13 +63,9 @@ def fetch_isoline(lat: float, lon: float, minutes: int, mode: str) -> dict:
     mode = mode if mode in ALLOWED_MODES else "drive"
 
     params = {
-        "lat": lat,
-        "lon": lon,
-        "type": "time",
-        "range": minutes * 60,
-        "mode": mode,
-        "traffic": "approximated",
-        "apiKey": GEOAPIFY_KEY,
+        "lat": lat, "lon": lon, "type": "time",
+        "range": minutes * 60, "mode": mode,
+        "traffic": "approximated", "apiKey": GEOAPIFY_KEY,
     }
     if "transit" in mode:
         params["range_type"] = "departure"
@@ -77,16 +73,18 @@ def fetch_isoline(lat: float, lon: float, minutes: int, mode: str) -> dict:
     url = "https://api.geoapify.com/v1/isoline"
     try:
         r = requests.get(url, params=params, timeout=25,
-                         headers={"User-Agent": "CommuteFinder/3.3"})
+                         headers={"User-Agent": "CommuteFinder/3.4"})
         r.raise_for_status()
-        return r.json()
+        js = r.json()
+        if not js.get("features"):
+            print("[Iso] Geoapify 200 but empty. First bytes:", r.text[:200])
+        return js
     except requests.HTTPError as e:
         st = r.status_code
-        print(f"[Iso] ERROR {st} – {'quota' if st in (403, 429) else e}")
+        print(f"[Iso] HTTP {st} – {'quota' if st in (403,429) else e}")
     except Exception as e:
-        print(f"[Iso] ERROR {e}")
+        print(f"[Iso] EXC – {e}")
     return {"type": "FeatureCollection", "features": []}
-
 
 # ─── shapely helpers ─────────────────────────────────────────────────────────
 def polygons_from_featurecollection(fc: dict) -> List:

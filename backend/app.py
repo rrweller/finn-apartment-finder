@@ -82,8 +82,13 @@ def api_isolines():
         intersection = p if intersection is None else intersection.intersection(p)
 
     global PREPARED_UNION
-    PREPARED_UNION = prep(intersection) if intersection and not intersection.is_empty else None
-    print(f"[Iso] {'OK' if PREPARED_UNION else 'EMPTY'} – features={len(feats_out)} modes={modes}")
+    if feats_out and intersection and not intersection.is_empty:
+        PREPARED_UNION = prep(intersection)
+        print(f"[Iso] OK – polygons={len(feats_out)}  modes={modes}")
+    else:
+        PREPARED_UNION = None
+        print("[Iso] ERROR – no usable polygon;"
+              " see previous lines for Geoapify or geocode problems")
     return jsonify({"type": "FeatureCollection", "features": feats_out})
 
 
