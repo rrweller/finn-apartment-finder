@@ -1,3 +1,4 @@
+/*MapView.js*/
 import React, { useEffect } from "react";
 import {
   MapContainer,

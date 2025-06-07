@@ -76,7 +76,9 @@ export default function App() {
       /* update that row’s address in state */
       setWorkLocs((prev) =>
         prev.map((row, idx) =>
-          idx === awaitingPickRow ? { ...row, address } : row
+          idx === awaitingPickRow
+            ? { ...row, address, lat: latlng.lat, lon: latlng.lng }
+            : row
         )
       );
     } catch (e) {
