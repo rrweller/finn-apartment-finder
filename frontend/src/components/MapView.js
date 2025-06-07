@@ -33,8 +33,7 @@ function PriceIcon(price) {
         ${price.toLocaleString("nb-NO")} kr
         <div class="bubble-tail"></div>
       </div>`,
-    iconSize: [0, 0],
-    iconAnchor: [0, 0],
+    // let Leaflet measure the DIV’s size for hit-testing
   });
 }
 

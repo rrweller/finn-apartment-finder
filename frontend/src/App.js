@@ -1,4 +1,4 @@
-/*App.js*/
+// src/App.js
 import React, { useState } from "react";
 import MapView from "./components/MapView";
 
@@ -33,9 +33,9 @@ const KOMMUNE_OPTIONS = [
 ];
 
 export default function App() {
-  /* State */
+  /* ─── state ───────────────────────────────────────────────────────────── */
   const [workLocs, setWorkLocs] = useState([
-    { address: "", time: 15, mode: "drive", lat: null, lon: null },
+    { address: "", time: 20, mode: "drive", lat: null, lon: null },
   ]);
   const [kommune,   setKommune]   = useState("Oslo");
   const [rentMin,   setRentMin]   = useState(0);
@@ -44,19 +44,20 @@ export default function App() {
   const [sizeMax,   setSizeMax]   = useState(0);
   const [boligtype, setBoligtype] = useState("");
 
-  const [isolineData, setIsolineData] = useState(null);
-  const [listings,     setListings]   = useState([]);
+  const [isolineData,   setIsolineData] = useState(null);
+  const [listings,      setListings]    = useState([]);
   const [awaitingPickRow, setAwaitingPickRow] = useState(null);
+  const [loading,       setLoading]      = useState(false);
 
-  /* Handlers */
+  /* ─── handlers ────────────────────────────────────────────────────────── */
   const handleAddRow = () =>
-    setWorkLocs((p) => [
-      ...p,
-      { address: "", time: 15, mode: "drive", lat: null, lon: null },
+    setWorkLocs((prev) => [
+      ...prev,
+      { address: "", time: 20, mode: "drive", lat: null, lon: null },
     ]);
-  
-  const handleRemoveRow = idx =>
-    setWorkLocs(p => p.filter((_,i) => i !== idx));
+
+  const handleRemoveRow = (idx) =>
+    setWorkLocs((prev) => prev.filter((_, i) => i !== idx));
 
   const activatePickMode = (idx) => setAwaitingPickRow(idx);
 
@@ -66,16 +67,17 @@ export default function App() {
       const res = await fetch(
         `/api/reverse_geocode?lat=${latlng.lat}&lon=${latlng.lng}`
       );
-      if (!res.ok) throw new Error();
+      if (!res.ok) throw new Error("reverse failed");
       const { address } = await res.json();
-      setWorkLocs((p) =>
-        p.map((r, i) =>
+      setWorkLocs((prev) =>
+        prev.map((r, i) =>
           i === awaitingPickRow
             ? { ...r, address, lat: latlng.lat, lon: latlng.lng }
             : r
         )
       );
-    } catch {
+    } catch (e) {
+      console.error(e);
       alert("Reverse-geocode failed.");
     } finally {
       setAwaitingPickRow(null);
@@ -92,49 +94,55 @@ export default function App() {
       return;
     }
 
-    // isolines
-    const isoRes = await fetch("/api/isolines", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ locations: payload }),
-    });
-    if (!isoRes.ok) {
-      alert("Isoline error");
-      return;
-    }
-    const iso = await isoRes.json();
-    if (!iso.features.length) {
-      alert("Could not build commute area.");
-      return;
-    }
-    setIsolineData(iso);
+    setLoading(true);
+    try {
+      // 1) isolines
+      const isoRes = await fetch("/api/isolines", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ locations: payload }),
+      });
+      if (!isoRes.ok) throw new Error("Isoline error");
+      const iso = await isoRes.json();
+      if (!iso.features.length) {
+        alert("Could not build commute area.");
+        return;
+      }
+      setIsolineData(iso);
 
-    // listings
-    const params = new URLSearchParams({
-      kommune,
-      rent_min: rentMin,
-      rent_max: rentMax,
-      size_min: sizeMin,
-      size_max: sizeMax,
-      boligtype,
-    });
-    const lstRes = await fetch(`/api/listings?${params}`);
-    if (!lstRes.ok) {
-      const err = await lstRes.json();
-      alert(err.error || "Listing error");
-      return;
+      // 2) listings
+      const params = new URLSearchParams({
+        kommune,
+        rent_min: rentMin,
+        rent_max: rentMax,
+        size_min: sizeMin,
+        size_max: sizeMax,
+        boligtype,
+      });
+      const lstRes = await fetch(`/api/listings?${params}`);
+      if (!lstRes.ok) {
+        const err = await lstRes.json();
+        alert(err.error || "Listing error");
+        return;
+      }
+      setListings(await lstRes.json());
+    } catch (err) {
+      console.error(err);
+      alert("Something went wrong – check console.");
+    } finally {
+      setLoading(false);
     }
-    setListings(await lstRes.json());
   };
 
+  /* ─── render ───────────────────────────────────────────────────────────── */
   return (
     <div className="layout-row">
       <aside className="sidebar">
         <form className="form-wrap" onSubmit={handleSearch}>
-          {/* ─── Work Address #1+ ─────────────────────────────────────────── */}
+          {/* Work addresses */}
           {workLocs.map((row, idx) => (
             <div key={idx} className="entry-block">
-              {/* Line 1: pin + address + time */}
+              {/* Line 1 */}
               <div className="form-group">
                 <button
                   type="button"
@@ -147,45 +155,44 @@ export default function App() {
                   type="text"
                   placeholder="Work address"
                   value={row.address}
+                  required
+                  className="input-address"
                   onChange={(e) =>
-                    setWorkLocs((p) =>
-                      p.map((r, i) =>
+                    setWorkLocs((prev) =>
+                      prev.map((r, i) =>
                         i === idx ? { ...r, address: e.target.value } : r
                       )
                     )
                   }
-                  required
-                  className="input-address"
                 />
                 <input
                   type="number"
                   min="1"
                   max="120"
+                  className="input-time"
                   value={row.time}
                   onChange={(e) =>
-                    setWorkLocs((p) =>
-                      p.map((r, i) =>
+                    setWorkLocs((prev) =>
+                      prev.map((r, i) =>
                         i === idx ? { ...r, time: e.target.value } : r
                       )
                     )
                   }
-                  className="input-time"
                 />
                 <span className="label-min">min</span>
               </div>
-
-              {/* Line 2: transport mode */}
+              {/* Line 2 */}
               <div className="form-group">
                 <select
+                  className="select-mode"
                   value={row.mode}
                   onChange={(e) =>
-                    setWorkLocs((p) =>
-                      p.map((r, i) =>
+                    setWorkLocs((prev) =>
+                      prev.map((r, i) =>
                         i === idx ? { ...r, mode: e.target.value } : r
                       )
                     )
                   }
-                  className="select-mode"
                 >
                   {MODE_OPTIONS.map((m) => (
                     <option key={m.value} value={m.value}>
@@ -194,11 +201,14 @@ export default function App() {
                   ))}
                 </select>
               </div>
-
-              {/* Line 3: +address and –address buttons */}
+              {/* Line 3 */}
               <div className="form-group">
                 {idx === workLocs.length - 1 && (
-                  <button type="button" className="btn-add" onClick={handleAddRow}>
+                  <button
+                    type="button"
+                    className="btn-add"
+                    onClick={handleAddRow}
+                  >
                     + address
                   </button>
                 )}
@@ -215,13 +225,13 @@ export default function App() {
             </div>
           ))}
 
-          {/* ─── Kommune ─────────────────────────────────────────────────────── */}
+          {/* Kommune */}
           <div className="form-group">
             <label className="label-inline">Kommune</label>
             <select
+              className="select-kommune"
               value={kommune}
               onChange={(e) => setKommune(e.target.value)}
-              className="select-kommune"
             >
               {KOMMUNE_OPTIONS.map((k) => (
                 <option key={k} value={k}>
@@ -231,59 +241,59 @@ export default function App() {
             </select>
           </div>
 
-          {/* ─── Rent Min/Max ───────────────────────────────────────────────── */}
+          {/* Rent */}
           <div className="form-group">
             <label className="label-inline">Rent</label>
             <input
               type="number"
               min="0"
+              className="input-rent"
               placeholder="Min kr"
               value={rentMin}
               onChange={(e) => setRentMin(e.target.value)}
-              className="input-rent"
             />
             <span className="label-dash">–</span>
             <input
               type="number"
               min="0"
+              className="input-rent"
               placeholder="Max kr"
               value={rentMax}
               onChange={(e) => setRentMax(e.target.value)}
-              className="input-rent"
             />
             <span className="label-unit">kr/mnd</span>
           </div>
 
-          {/* ─── Size Min/Max ───────────────────────────────────────────────── */}
+          {/* Size */}
           <div className="form-group">
             <label className="label-inline">Size</label>
             <input
               type="number"
               min="0"
+              className="input-size"
               placeholder="Min m²"
               value={sizeMin}
               onChange={(e) => setSizeMin(e.target.value)}
-              className="input-size"
             />
             <span className="label-dash">–</span>
             <input
               type="number"
               min="0"
+              className="input-size"
               placeholder="Max m²"
               value={sizeMax}
               onChange={(e) => setSizeMax(e.target.value)}
-              className="input-size"
             />
             <span className="label-unit">m²</span>
           </div>
 
-          {/* ─── Boligtype ───────────────────────────────────────────────────── */}
+          {/* Type */}
           <div className="form-group">
             <label className="label-inline">Type</label>
             <select
+              className="select-type"
               value={boligtype}
               onChange={(e) => setBoligtype(e.target.value)}
-              className="select-type"
             >
               {BOLIGTYPE_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>
@@ -293,13 +303,20 @@ export default function App() {
             </select>
           </div>
 
-          {/* ─── Search Button ───────────────────────────────────────────────── */}
+          {/* Search */}
           <div className="form-group">
-            <button type="submit" className="btn-search">
-              Search
+            <button type="submit" className="btn-search" disabled={loading}>
+              {loading ? "Searching…" : "Search"}
             </button>
           </div>
         </form>
+
+        {/* Loading indicator */}
+        {loading && (
+          <div className="loading-indicator">
+            <div className="spinner" /> Loading apartments…
+          </div>
+        )}
       </aside>
 
       <main className="map-pane">
@@ -313,4 +330,3 @@ export default function App() {
     </div>
   );
 }
-
