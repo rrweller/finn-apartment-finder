@@ -7,6 +7,7 @@ from typing import List, Optional, Tuple
 
 import requests
 from shapely.geometry import Point, shape
+import urllib.parse as _u
 
 GEOAPIFY_KEY = os.getenv("GEOAPIFY_KEY", "").strip()
 if not GEOAPIFY_KEY:
@@ -14,7 +15,9 @@ if not GEOAPIFY_KEY:
 
 HEADERS = {"User-Agent": "CommuteFinder/1.2"}
 
-ALLOWED_MODES = {"drive", "transit", "bicycle", "walk"}
+ALLOWED_MODES = {"drive", "transit", "bicycle", "walk", "approximated_transit"}
+
+_GEOCODE_URL_NOMINATIM = "https://nominatim.openstreetmap.org/search"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -57,11 +60,16 @@ def reverse_geocode(lat: float, lon: float) -> Optional[str]:
 # ─────────────────────────────────────────────────────────────────────────────
 def fetch_isoline(lat: float, lon: float, minutes: int, mode: str = "drive") -> dict:
     """
-    Call Geoapify Isoline API → GeoJSON FeatureCollection.
-    • adds traffic=approximated for all modes
-    • for public transit adds transfers=4  (allow up to four changes: bus→metro→train…)
+    Call Geoapify Isoline API => GeoJSON FeatureCollection.
+
+    We translate UI's "transit" into Geoapify's `approximated_transit`
+    so that Oslo (and most other cities) get the same generous coverage
+    as CommuteTimeMap.
     """
-    mode = mode if mode in ALLOWED_MODES else "drive"
+    if mode == "transit":
+        mode = "approximated_transit"      # <── real fix
+    mode = mode if mode in ALLOWED_MODES | {"approximated_transit"} else "drive"
+
     params = {
         "lat": lat,
         "lon": lon,
@@ -69,13 +77,11 @@ def fetch_isoline(lat: float, lon: float, minutes: int, mode: str = "drive") -> 
         "range": minutes * 60,
         "mode": mode,
         "traffic": "approximated",
+        "range_type": "departure",
         "apiKey": GEOAPIFY_KEY,
     }
-    if mode == "transit":
-        params["range_type"] = "departure"
-        params["transfers"] = 4            # <-- NEW! multi-leg PT
     url = "https://api.geoapify.com/v1/isoline"
-    print("[Iso] GET", url, params)        # debug: full request
+    print("[Iso] GET", url, params)        # debug
     r = requests.get(url, params=params, headers=HEADERS, timeout=25)
     r.raise_for_status()
     return r.json()
@@ -91,3 +97,18 @@ def polygons_from_featurecollection(fc: dict) -> List:
 def point_inside_any(lat: float, lon: float, polys: List) -> bool:
     pt = Point(lon, lat)
     return any(pt.within(poly) for poly in polys)
+
+def geocode_address_fallback(address: str) -> Optional[Tuple[float, float]]:
+    """
+    Try Nominatim when Geoapify fails (strict rate-limit: 1/s).
+    """
+    q = {"q": address, "format": "json", "limit": 1}
+    try:
+        r = requests.get(_GEOCODE_URL_NOMINATIM, params=q, headers={"User-Agent": "CommuteFinder"}, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+        if data:
+            return float(data[0]["lat"]), float(data[0]["lon"])
+    except Exception:
+        pass
+    return None

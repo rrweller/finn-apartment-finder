@@ -44,9 +44,12 @@ def _parse_listing(article) -> Dict:
     # Fallback: brute-force search in all text
     whole = article.get_text(" ", strip=True)
     if not addr:
-        # first “,<city>” pattern
-        m = re.search(r"(.+,\s*[A-ZÆØÅa-zøæå\- ]+)", whole)
-        addr = m.group(1) if m else ""
+        if keys_div:
+            txt_block = txt                       # we still have txt from keys_div
+        else:
+            txt_block = whole
+        addr_parts = [p.strip() for p in txt_block.split(",")]
+        addr = ", ".join(addr_parts[:2])
     m = PRICE_RX.search(whole)
     if m:
         price = int(DIGITS_ONLY.sub("", m.group()))

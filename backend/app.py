@@ -15,7 +15,11 @@ from geo_utils import (
     point_inside_any,
     polygons_from_featurecollection,
     reverse_geocode,
+    geocode_address_fallback
 )
+import pathlib, csv, datetime
+DBG_DIR = pathlib.Path(__file__).with_suffix("").parent / "debug"
+DBG_DIR.mkdir(exist_ok=True)
 
 RAW_FILE = "listings_raw.txt"
 INSIDE_FILE = "listings_inside.txt"
@@ -94,40 +98,61 @@ def api_isolines():
 
 @app.get("/api/listings")
 def api_listings():
-    kommune = request.args.get("kommune", "")
-    rent = int(request.args.get("rent", "0") or 0)
-    if not kommune or not rent:
-        return jsonify({"error": "kommune and rent required"}), 400
-    if not POLYGONS_LAST:
-        return jsonify({"error": "No isolines computed yet"}), 400
+    komm  = request.args.get("kommune", "")
+    rent  = int(request.args.get("rent", "0") or 0)
 
-    kode = resolve_kommune_code(kommune)
+    if not komm or not rent:
+        return jsonify({"error": "kommune & rent needed"}), 400
+    if not POLYGONS_LAST:
+        return jsonify({"error": "run isolines first"}), 400
+
+    kode = resolve_kommune_code(komm)
     if not kode:
-        return jsonify({"error": "Unknown kommune"}), 400
+        return jsonify({"error": "unknown kommune"}), 400
 
     raw = scrape_listings(kode, rent)
 
-    inside = []
+    geocoded, inside = [], []
+    FAIL_LIMIT = 30          # max per-request debug lines
+
+    def dbg(msg):
+        if len(inside) + len(geocoded) < FAIL_LIMIT:
+            print("   ↳", msg)
+
     for ad in raw:
-        coords = geocode_address(f"{ad['address']}, Norway")
+        addr = f"{ad['address']}, Norway"
+        coords = geocode_address(addr) or geocode_address_fallback(addr)
         if not coords:
+            dbg(f"no geocode → {addr}")
             continue
+
         lat, lon = coords
+        ad["lat"], ad["lon"] = lat, lon
+        geocoded.append(ad)
+
         if point_inside_any(lat, lon, POLYGONS_LAST):
-            ad["lat"], ad["lon"] = lat, lon
             inside.append(ad)
+        else:
+            dbg(f"outside polygon → {addr}")
 
-    # -----------  write debugging files  --------------------------------------------
-    def dump(path, ads):
-        with open(path, "w", encoding="utf-8") as f:
+    # ----- write debug CSVs -------------------------------------------------
+    ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    raw_path    = DBG_DIR / f"{ts}_raw.csv"
+    inside_path = DBG_DIR / f"{ts}_inside.csv"
+
+    def dump_csv(path, ads):
+        with open(path, "w", encoding="utf-8", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(["title", "price", "address", "lat", "lon"])
             for a in ads:
-                f.write(f"{a['title']} | {a['price']} kr | {a['address']}\n")
+                w.writerow([a["title"], a["price"], a["address"],
+                            a.get("lat"), a.get("lon")])
 
-    dump(RAW_FILE, raw)
-    dump(INSIDE_FILE, inside)
+    dump_csv(raw_path,    geocoded)          # only those we could geocode
+    dump_csv(inside_path, inside)
 
-    print(f"[List] raw={len(raw)}  inside={len(inside)}  "
-          f"→ wrote {RAW_FILE} & {INSIDE_FILE}")
+    print(f"[List] raw={len(raw)}  geocoded={len(geocoded)}  "
+          f"inside={len(inside)}  ⟶ {inside_path}")
 
     return jsonify(inside)
 
