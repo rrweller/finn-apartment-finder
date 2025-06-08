@@ -19,6 +19,7 @@ html, body, #root {
   background: var(--bg);
   color: var(--text);
   font-family: "Segoe UI", sans-serif;
+  font-size: 14px;
 }
 
 /* ─── layout ───────────────────────────────────────────────────────────── */
@@ -46,7 +47,7 @@ html, body, #root {
   display:flex; align-items:center; gap:12px; flex-wrap:wrap;
 }
 .label-inline {
-  min-width:80px;
+  min-width:30px;
   color: var(--text-secondary);
 }
 input, select {
@@ -58,7 +59,7 @@ input, select {
   font-size: 14px;
 }
 .input-address { flex:1; }
-.input-time, .input-rent, .input-size { width:140px; }
+.input-time, .input-rent, .input-size { width:90px; }
 
 /* buttons */
 button {

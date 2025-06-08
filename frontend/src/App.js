@@ -23,21 +23,14 @@ const BOLIGTYPE_OPTIONS = [
   { value: "andre",              label: "Andre" },
 ];
 
-// Kommune options
-const KOMMUNE_OPTIONS = [
-  "Oslo",
-  "Bergen",
-  "Trondheim",
-  "Stavanger",
-  "Fredrikstad",
-];
+const SHOW_QUERY_POLY = true;          // ⇦ turn to false to hide outline
 
 export default function App() {
-  /* ─── state ───────────────────────────────────────────────────────────── */
+  /* ─── state ─────────────────────────────────────────────────────────── */
   const [workLocs, setWorkLocs] = useState([
     { address: "", time: 20, mode: "drive", lat: null, lon: null },
   ]);
-  const [kommune,   setKommune]   = useState("Oslo");
+
   const [rentMin,   setRentMin]   = useState(0);
   const [rentMax,   setRentMax]   = useState(15000);
   const [sizeMin,   setSizeMin]   = useState(0);
@@ -49,7 +42,7 @@ export default function App() {
   const [awaitingPickRow, setAwaitingPickRow] = useState(null);
   const [loading,       setLoading]      = useState(false);
 
-  /* ─── handlers ────────────────────────────────────────────────────────── */
+  /* ─── handlers ──────────────────────────────────────────────────────── */
   const handleAddRow = () =>
     setWorkLocs((prev) => [
       ...prev,
@@ -61,7 +54,8 @@ export default function App() {
 
   const activatePickMode = (idx) => setAwaitingPickRow(idx);
 
-  const handleMapPick = async (latlng) => {
+  /* ─── reverse-geocode after map click ─────────────────────────────── */
+  const handleMapPick = async latlng => {
     if (awaitingPickRow === null) return;
     try {
       const res = await fetch(
@@ -69,7 +63,7 @@ export default function App() {
       );
       if (!res.ok) throw new Error("reverse failed");
       const { address } = await res.json();
-      setWorkLocs((prev) =>
+      setWorkLocs(prev =>
         prev.map((r, i) =>
           i === awaitingPickRow
             ? { ...r, address, lat: latlng.lat, lon: latlng.lng }
@@ -84,11 +78,12 @@ export default function App() {
     }
   };
 
-  const handleSearch = async (e) => {
+  /* ─── main search button ─────────────────────────────────────────── */
+  const handleSearch = async e => {
     e.preventDefault();
     const payload = workLocs
-      .filter((l) => l.address.trim())
-      .map((l) => ({ ...l, time: Number(l.time) }));
+      .filter(l => l.address.trim())
+      .map(l => ({ ...l, time: Number(l.time) }));
     if (!payload.length) {
       alert("Add at least one work address.");
       return;
@@ -96,7 +91,7 @@ export default function App() {
 
     setLoading(true);
     try {
-      // 1) isolines
+      /* 1) isolines */
       const isoRes = await fetch("/api/isolines", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -110,9 +105,8 @@ export default function App() {
       }
       setIsolineData(iso);
 
-      // 2) listings
+      /* 2) listings */
       const params = new URLSearchParams({
-        kommune,
         rent_min: rentMin,
         rent_max: rentMax,
         size_min: sizeMin,
@@ -134,7 +128,7 @@ export default function App() {
     }
   };
 
-  /* ─── render ───────────────────────────────────────────────────────────── */
+  /* ─── render ────────────────────────────────────────────────────────── */
   return (
     <div className="layout-row">
       <aside className="sidebar">
@@ -225,22 +219,6 @@ export default function App() {
             </div>
           ))}
 
-          {/* Kommune */}
-          <div className="form-group">
-            <label className="label-inline">Kommune</label>
-            <select
-              className="select-kommune"
-              value={kommune}
-              onChange={(e) => setKommune(e.target.value)}
-            >
-              {KOMMUNE_OPTIONS.map((k) => (
-                <option key={k} value={k}>
-                  {k}
-                </option>
-              ))}
-            </select>
-          </div>
-
           {/* Rent */}
           <div className="form-group">
             <label className="label-inline">Rent</label>
@@ -323,6 +301,8 @@ export default function App() {
         <MapView
           isolineData={isolineData}
           listings={listings}
+          workPins={workLocs}          /* ⇦ NEW */
+          showQueryPoly={SHOW_QUERY_POLY} /* ⇦ NEW */
           pickingActive={awaitingPickRow !== null}
           onPick={handleMapPick}
         />
@@ -330,3 +310,4 @@ export default function App() {
     </div>
   );
 }
+
