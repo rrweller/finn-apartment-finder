@@ -6,14 +6,14 @@ from typing import List
 # ── 3rd-party ────────────────────────────────────────────────────────────
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-from shapely.geometry import Point, mapping, Polygon, MultiPolygon
+from shapely.geometry import Point, Polygon, MultiPolygon, mapping
 from shapely.prepared import prep
 
-# ── our modules ──────────────────────────────────────────────────────────
+# ── internal modules ─────────────────────────────────────────────────────
 from finn_scraper import scrape_listings_polygon
 from geo_utils    import geocode_address, reverse_geocode, fetch_isoline
 
-# ----------------------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────────
 app = Flask(__name__)
 CORS(app)
 
@@ -23,10 +23,10 @@ CACHE_DIR = BASE_DIR / "cache"
 DEBUG_DIR.mkdir(exist_ok=True)
 CACHE_DIR.mkdir(exist_ok=True)
 
-PREPARED_UNION = None     # shapely.PreparedGeometry
-POLY_PARAM     = ""       # the string we pass to FINN
+PREPARED_UNION = None      # precise geometry for Point-in-Polygon
+POLY_PARAM     = ""        # single-ring string we pass to FINN
 
-# ─── helpers: CSV & cache ────────────────────────────────────────────────
+# ─── helpers: CSV + cache ────────────────────────────────────────────────
 def write_csv(p: pathlib.Path, rows: List[dict]):
     with p.open("w", encoding="utf-8", newline="") as f:
         w = csv.writer(f)
@@ -40,74 +40,73 @@ def write_csv(p: pathlib.Path, rows: List[dict]):
 def _cache_path(key: str, rent_max: int) -> pathlib.Path:
     return CACHE_DIR / f"{key}_{rent_max}.json"
 
-def load_listings_cache(key: str, rent_max: int):
+def load_cache(key: str, rent_max: int):
     fn = _cache_path(key, rent_max)
     if not fn.exists():
         return None
     data = json.loads(fn.read_text(encoding="utf-8"))
     ts   = datetime.datetime.fromisoformat(data["ts"])
     if datetime.datetime.utcnow() - ts < datetime.timedelta(hours=24):
-        print(f"[Cache] HIT listings {key}")
+        print(f"[Cache] HIT {key}")
         return data["raw"]
-    print(f"[Cache] STALE listings {key}")
+    print(f"[Cache] STALE {key}")
     return None
 
-def save_listings_cache(key: str, rent_max: int, raw: List[dict]):
+def save_cache(key: str, rent_max: int, raw: List[dict]):
     fn = _cache_path(key, rent_max)
-    payload = {"ts": datetime.datetime.utcnow().isoformat(), "raw": raw}
-    fn.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
-    print(f"[Cache] SAVED listings {key}")
+    fn.write_text(
+        json.dumps({"ts": datetime.datetime.utcnow().isoformat(),
+                    "raw": raw},
+                   ensure_ascii=False),
+        encoding="utf-8")
+    print(f"[Cache] SAVED {key}")
 
-# ── build FINN’s polylocation param ───────────────────────────────────────
-def build_polylocation_param(geom, max_vertices=30) -> str:
+# ─── FINN polylocation builder ───────────────────────────────────────────
+def build_polylocation_param(geom, max_vertices: int = 30) -> str:
     """
-    Turn a (Multi)Polygon into the "lon lat,lon lat,..." string FINN wants.
-    If the geometry is a MultiPolygon, keep only the largest patch.
+    Return "lon lat,lon lat,..." string.
+    If *geom* is a MultiPolygon we take its convex hull so the result is
+    always a single continuous ring (FINN cannot parse MultiPolygons).
     """
     if isinstance(geom, MultiPolygon):
-        geom = max(geom.geoms, key=lambda p: p.area)
+        geom = geom.convex_hull
 
-    poly: Polygon = geom.simplify(0.0003)             # shave URL length
+    poly: Polygon = geom.simplify(0.0003)            # shave URL length
     coords = list(poly.exterior.coords)
     step   = max(1, len(coords) // max_vertices)
     sampled = coords[::step]
     if sampled[-1] != sampled[0]:
-        sampled.append(sampled[0])                     # close ring
+        sampled.append(sampled[0])                    # close ring
 
     return ",".join(f"{lon:.5f} {lat:.5f}" for lon, lat in sampled)
 
 # ─── /api/isolines ───────────────────────────────────────────────────────
 @app.post("/api/isolines")
 def api_isolines():
-    locs = request.get_json(force=True).get("locations", [])
-    intersection, feats_out, modes = None, [], set()
+    locs  = request.get_json(force=True).get("locations", [])
+    feats_out, modes = [], set()
+    intersection = None
 
-    from shapely.geometry import shape
-    for loc_idx, loc in enumerate(locs):
+    from shapely.geometry import shape, MultiPolygon
+    for idx, loc in enumerate(locs):
         minutes = int(loc.get("time", 20))
         mode    = loc.get("mode", "drive")
 
-        if "lat" in loc and "lon" in loc:
-            lat, lon = loc["lat"], loc["lon"]
-        else:
-            coords = geocode_address(f"{loc.get('address','')}, Norway")
-            if not coords:
-                print(f"[Iso] geocode miss → '{loc.get('address','')}'")
-                continue
-            lat, lon = coords
-
-        fc   = fetch_isoline(lat, lon, minutes, mode)
-        feats = fc.get("features", [])
-        if not feats:
+        lat, lon = (loc["lat"], loc["lon"]) if "lat" in loc else \
+                    geocode_address(f"{loc.get('address','')}, Norway") or (None, None)
+        if lat is None:
             continue
 
-        for f in feats:
-            f.setdefault("properties", {}).update(mode=mode, locId=loc_idx)
+        fc = fetch_isoline(lat, lon, minutes, mode)
+        if not fc.get("features"):
+            continue
 
-        feats_out.extend(feats)
+        for f in fc["features"]:
+            f.setdefault("properties", {}).update(locId=idx, mode=mode)
+        feats_out.extend(fc["features"])
         modes.add(mode)
 
-        poly = shape(feats[0]["geometry"])
+        poly = shape(fc["features"][0]["geometry"])
         intersection = poly if intersection is None else intersection.intersection(poly)
 
     global PREPARED_UNION, POLY_PARAM
@@ -115,19 +114,29 @@ def api_isolines():
     POLY_PARAM     = ""
 
     if feats_out and intersection and not intersection.is_empty:
-        # collapse MultiPolygon to largest patch for both the query & the map
-        if isinstance(intersection, MultiPolygon):
-            intersection = max(intersection.geoms, key=lambda p: p.area)
-
+        # keep the exact (multi)polygon for point-in-poly tests
         PREPARED_UNION = prep(intersection)
-        POLY_PARAM     = build_polylocation_param(intersection)
 
+        # single-ring version → FINN
+        from shapely.geometry import MultiPolygon
+        single_ring = intersection.convex_hull if isinstance(intersection, MultiPolygon) else intersection
+        POLY_PARAM  = build_polylocation_param(single_ring)
+
+        # ► NEW: add the true intersection patch(es)
         feats_out.append({
-            "type": "Feature",
-            "geometry": mapping(intersection),
-            "properties": {"query": True}
+            "type":       "Feature",
+            "geometry":   mapping(intersection),
+            "properties": {"intersection": True},
         })
-        print(f"[Iso] OK – polygons={len(feats_out)}  modes={modes}")
+
+        # ► query outline (yellow)
+        feats_out.append({
+            "type":       "Feature",
+            "geometry":   mapping(single_ring),
+            "properties": {"query": True},
+        })
+
+        print(f"[Iso] OK patches={len(intersection.geoms) if isinstance(intersection,MultiPolygon) else 1} modes={modes}")
     else:
         print("[Iso] ERROR – no usable polygon")
 
@@ -144,43 +153,38 @@ def api_listings():
     size_min  = int(request.args.get("size_min", 0) or 0)
     size_max  = int(request.args.get("size_max", 0) or 0)
     boligtype = request.args.get("boligtype", "").strip().lower()
-
     if rent_max <= 0:
         return jsonify({"error": "valid rent_max required"}), 400
 
-    t0         = time.perf_counter()
-    cache_hash = hashlib.sha1(POLY_PARAM.encode()).hexdigest()
+    t0        = time.perf_counter()
+    cache_key = hashlib.sha1(POLY_PARAM.encode()).hexdigest()
 
-    raw = load_listings_cache(cache_hash, rent_max)
-    if raw is None:
-        raw = scrape_listings_polygon(POLY_PARAM, rent_max)
-        save_listings_cache(cache_hash, rent_max, raw)
-    print(f"[List] harvested raw={len(raw)} ads")
+    raw = load_cache(cache_key, rent_max) \
+          or scrape_listings_polygon(POLY_PARAM, rent_max)
+    save_cache(cache_key, rent_max, raw)
 
-    inside, geoc     = [], {}
+    inside, gcache = [], {}
     cnt_price = cnt_size = cnt_type = 0
 
     for ad in raw:
-        price = ad.get("price") or 0
-        size  = ad.get("size")  or 0
-        typ   = (ad.get("type") or "").lower()
+        p = ad.get("price") or 0
+        s = ad.get("size")  or 0
+        t = (ad.get("type") or "").lower()
 
-        if price < rent_min or price > rent_max:               continue
+        if p < rent_min or p > rent_max:       continue
         cnt_price += 1
-        if size_min and size < size_min:                       continue
-        if size_max and size > size_max:                       continue
+        if size_min and s < size_min:          continue
+        if size_max and s > size_max:          continue
         cnt_size += 1
-        if boligtype and typ != boligtype:                     continue
+        if boligtype and t != boligtype:       continue
         cnt_type += 1
 
         addr = f"{ad['address']}, Norway"
-        if addr not in geoc:
-            geoc[addr] = geocode_address(addr)
-        coords = geoc[addr]
+        gcache.setdefault(addr, geocode_address(addr))
+        coords = gcache[addr]
         if not coords:
             continue
         lat, lon = coords
-
         if PREPARED_UNION.contains(Point(lon, lat)):
             ad.update(lat=lat, lon=lon)
             inside.append(ad)
@@ -191,7 +195,6 @@ def api_listings():
     ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     write_csv(DEBUG_DIR / f"{ts}_raw.csv",    raw)
     write_csv(DEBUG_DIR / f"{ts}_inside.csv", inside)
-
     return jsonify(inside)
 
 # ─── /api/reverse_geocode ───────────────────────────────────────────────
@@ -204,6 +207,7 @@ def api_reverse():
     addr = reverse_geocode(lat, lon)
     return jsonify({"address": addr or ""}), (200 if addr else 404)
 
-# ----------------------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
+

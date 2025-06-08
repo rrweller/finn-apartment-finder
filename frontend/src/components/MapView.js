@@ -1,5 +1,5 @@
 /*MapView.js*/
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import {
   MapContainer,
   TileLayer,
@@ -7,16 +7,21 @@ import {
   Marker,
   Tooltip,
   useMapEvents,
+  useMap,
 } from "react-leaflet";
 import MarkerClusterGroup from "react-leaflet-cluster";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "leaflet.markercluster/dist/MarkerCluster.css";
 import "leaflet.markercluster/dist/MarkerCluster.Default.css";
+import "leaflet.pattern";                       // npm i leaflet.pattern
 
-/* ─── colours & icons ───────────────────────────────────────────────── */
-const ISO_COLORS = ["#bb86fc","#03dac6","#cf6679","#3700b3","#018786","#ff0266"];
+/* ─── colour constants ───────────────────────────────────────────────── */
+const ISO_COLORS          = ["#bb86fc","#03dac6","#cf6679","#3700b3","#018786","#ff0266"];
+const INTERSECTION_COLOR  = "#00e0ff";         // cyan for area, outline, stripes
+const QUERY_STROKE        = "#ffd600";         // yellow convex hull outline
 
+/* ─── icon helpers ───────────────────────────────────────────────────── */
 function PriceIcon(price) {
   return L.divIcon({
     className: "price-bubble-container",
@@ -26,14 +31,33 @@ function PriceIcon(price) {
            </div>`,
   });
 }
-const WorkPin = new L.Icon.Default();     // use Leaflet’s stock blue pin
+const WorkPin = new L.Icon.Default();
 
 function ClickCapture({ enabled, onPick }) {
   useMapEvents({ click: e => enabled && onPick(e.latlng) });
   return null;
 }
 
-/* ───────────────────────────────────────────────────────────────────── */
+/* ─── inject one diagonal-stripe SVG pattern into the map ────────────── */
+function StripePatternDef({ onReady }) {
+  const map = useMap();
+
+  useEffect(() => {
+    const pattern = new L.StripePattern({
+      weight:        2,
+      spaceWeight:   6,
+      color:         INTERSECTION_COLOR,  // same hue
+      opacity:       0.20,                // fainter than fill (0.40 below)
+      angle:         135,
+    }).addTo(map);
+
+    onReady(pattern);
+  }, [map, onReady]);
+
+  return null;
+}
+
+/* ─── main component ──────────────────────────────────────────────────── */
 export default function MapView({
   isolineData,
   listings,
@@ -42,7 +66,10 @@ export default function MapView({
   pickingActive,
   onPick,
 }) {
-  /* clone the GeoJSON so we can strip the query polygon if hidden */
+  const [stripePattern, setStripePattern] = useState(null);
+  const handlePatternReady = useCallback(p => setStripePattern(p), []);
+
+  /* hide yellow outline when toggled off ------------------------------- */
   const geojsonToDraw = useMemo(() => {
     if (!isolineData) return null;
     const feats = isolineData.features.filter(
@@ -51,25 +78,37 @@ export default function MapView({
     return { ...isolineData, features: feats };
   }, [isolineData, showQueryPoly]);
 
-  /* style callback */
+  /* per-feature styling ------------------------------------------------- */
   const styleFn = feat => {
-    if (feat.properties?.query) {
+    const p = feat.properties || {};
+
+    if (p.intersection) {
       return {
-        color: "#ffd600",
-        weight: 2,
-        dashArray: "6 4",
-        fillOpacity: 0.06,
+        color:        INTERSECTION_COLOR,
+        weight:       1,
+        dashArray:    "6 4",
+        fillColor:    INTERSECTION_COLOR,
+        fillOpacity:  1.0,
+        fillPattern:  stripePattern,
       };
     }
-    const id = feat.properties.locId || 0;
+    if (p.query) {
+      return {
+        color:        QUERY_STROKE,
+        weight:       2,
+        dashArray:    "6 4",
+        fillOpacity:  0.02,
+      };
+    }
+    const id = p.locId || 0;
     return {
-      color: ISO_COLORS[id % ISO_COLORS.length],
-      weight: 3,
-      fillOpacity: 0.25,
+      color:        ISO_COLORS[id % ISO_COLORS.length],
+      weight:       3,
+      fillOpacity:  0.20,
     };
   };
 
-  /* Leaflet sprite paths */
+  /* fix default marker sprite URLs ------------------------------------- */
   useEffect(() => {
     delete L.Icon.Default.prototype._getIconUrl;
     L.Icon.Default.mergeOptions({
@@ -82,7 +121,7 @@ export default function MapView({
     });
   }, []);
 
-  /* ─── render map ──────────────────────────────────────────────────── */
+  /* ─── render map ───────────────────────────────────────────────────── */
   return (
     <div className="map-wrap">
       <MapContainer
@@ -91,6 +130,9 @@ export default function MapView({
         className={pickingActive ? "crosshair" : ""}
         style={{ width: "100%", height: "100%" }}
       >
+        {/* load stripe pattern once */}
+        <StripePatternDef onReady={handlePatternReady} />
+
         <TileLayer
           url="https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png"
           attribution="&copy; Stadia Maps, &copy; OSM"
@@ -115,7 +157,7 @@ export default function MapView({
             </Marker>
           ))}
 
-        {/* clustered FINN adverts */}
+        {/* clustered FINN ads */}
         <MarkerClusterGroup
           spiderfyOnMaxZoom
           showCoverageOnHover={false}
