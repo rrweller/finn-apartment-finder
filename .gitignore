@@ -7,3 +7,4 @@ activate.bat
 *.bak
 *.dat
 *.dir
+/backend/venv
