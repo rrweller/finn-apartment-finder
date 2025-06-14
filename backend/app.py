@@ -4,7 +4,7 @@ import csv, datetime, json, pathlib, time, hashlib
 from typing import List
 
 # ── 3rd-party ────────────────────────────────────────────────────────────
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from shapely.geometry import Point, Polygon, MultiPolygon, mapping
 from shapely.prepared import prep
@@ -14,7 +14,11 @@ from finn_scraper import scrape_listings_polygon
 from geo_utils    import geocode_address, reverse_geocode, fetch_isoline
 
 # ─────────────────────────────────────────────────────────────────────────
-app = Flask(__name__)
+app = Flask(
+    __name__,
+    static_folder=str(pathlib.Path(__file__).parent / "static"),  # ← point at build/static
+    static_url_path="/static"                                     # files served at /static/…
+)
 CORS(app)
 
 BASE_DIR  = pathlib.Path(__file__).parent
@@ -25,6 +29,31 @@ CACHE_DIR.mkdir(exist_ok=True)
 
 PREPARED_UNION = None      # precise geometry for Point-in-Polygon
 POLY_PARAM     = ""        # single-ring string we pass to FINN
+
+# ─── React build catch-all ──────────────────────────────────────
+# This MUST come **after** your API routes so it only runs
+# when nothing else matched (i.e. it's the last fallback).
+@app.route("/", defaults={"path": ""})
+@app.route("/<path:path>")
+def react_catch_all(path):
+    """
+    1. In dev: show a tiny JSON stub so we know backend is up.
+    2. In prod: serve real files from the React build folder.
+    """
+    # dev mode?  (flask run --debug or FLASK_ENV=development)
+    if app.debug:
+        return jsonify({"status": "backend up"}), 200
+
+    # prod:
+    build_root = pathlib.Path(app.static_folder).parent
+    requested  = build_root / path
+
+    if path != "" and requested.exists():
+        # exact file (main.js, favicon, asset-manifest.json, etc.)
+        return send_from_directory(build_root, path)
+
+    # otherwise → index.html (React Router handles actual route)
+    return send_from_directory(build_root, "index.html")
 
 # ─── helpers: CSV + cache ────────────────────────────────────────────────
 def write_csv(p: pathlib.Path, rows: List[dict]):
@@ -209,5 +238,9 @@ def api_reverse():
 
 # ─────────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    # When you run python app.py directly (Windows dev),
+    # pick sensible defaults; prod will be run by Gunicorn.
+    debug = os.environ.get("FLASK_ENV") != "production"
+    host  = "127.0.0.1" if debug else "0.0.0.0"
+    app.run(debug=debug, host=host, port=5000)
 
