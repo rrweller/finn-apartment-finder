@@ -34,12 +34,11 @@ def _pick_rev(lat: float):
 CACHE_DB = os.path.join(os.path.dirname(__file__), "geocode_cache.db")
 TTL = datetime.timedelta(hours=24)
 
-@lru_cache(maxsize=1)
-def _open_cache():
-    return shelve.open(CACHE_DB)
+def _open_cache(flag: str):
+    return shelve.open(CACHE_DB, flag=flag)
 
 def _get_cached(address: str):
-    db = _open_cache()
+    db = _open_cache("r")
     rec = db.get(address)
     if not rec:
         return None
@@ -52,9 +51,12 @@ def _get_cached(address: str):
     return None
 
 def _set_cached(address: str, lat: float, lon: float):
-    db = _open_cache()
-    db[address] = (lat, lon, datetime.datetime.utcnow().isoformat())
-    db.sync()
+    with _open_cache("c") as db:   # acquire write lock briefly
+        db[address] = (
+            lat,
+            lon,
+            datetime.datetime.utcnow().isoformat(),
+        )
 
 @lru_cache(maxsize=4096)
 def geocode_address(address: str) -> Optional[Tuple[float, float]]:
