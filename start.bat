@@ -1,73 +1,64 @@
 @echo off
-REM ===========================================================
-REM  Unified launcher – Windows (cmd or PowerShell)
-REM  Usage:  start.bat          :: development
-REM          start.bat prod     :: production
-REM ===========================================================
-
+REM ════════════════════════════════════════════════════════════════════
+REM  Finn-Apartment-Finder – DEV launcher (Windows 10/11)
+REM  • Creates/re-uses Python venv in backend\
+REM  • Installs backend + frontend dependencies if missing
+REM  • Persists GEOAPIFY_KEY in your user environment (prompt once)
+REM  • Opens two consoles:
+REM       ① Flask dev server  → http://localhost:5000
+REM       ② React dev server  → http://localhost:3000 (auto-proxy /api/*)
+REM ════════════════════════════════════════════════════════════════════
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
 
-REM ───── choose mode ─────────────────────────────────────────
-if /I "%1"=="prod" (
-    set "MODE=prod"
-) else (
-    set "MODE=dev"
-)
-
-REM ───── persist GEOAPIFY_KEY (once) ─────────────────────────
+REM ─── 0.  Persist GEOAPIFY_KEY (prompt once) ──────────────────────────
 for /f "tokens=2*" %%a in ('reg query "HKCU\Environment" /v GEOAPIFY_KEY 2^>nul') do set "GEOAPIFY_KEY=%%b"
 if "%GEOAPIFY_KEY%"=="" (
-    echo Geoapify API key not found.
-    set /p GEOAPIFY_KEY=Enter your Geoapify API key: 
-    REM  store permanently for this user
+    echo.
+    echo  You need a GEOAPIFY API key for reverse-geocoding.
+    set /p GEOAPIFY_KEY=  Enter your GEOAPIFY_KEY: 
+    echo.
+    REM  Store permanently for this Windows user
     setx GEOAPIFY_KEY "%GEOAPIFY_KEY%" >nul
 )
 
-REM ───── BACKEND  (venv + deps) ─────────────────────────────
-echo.
-echo [Backend] Preparing Python env …
+REM ─── 1.  Backend  – venv + deps ─────────────────────────────────────
+echo [Backend]  Checking Python virtual-env …
 cd backend
 if not exist venv (
+    echo    Creating venv …
     py -3 -m venv venv
 )
+
 call venv\Scripts\activate.bat
+
+REM  Install/upgrade deps only if needed (quiet)
+pip install -q --upgrade pip
 pip install -q -r requirements.txt
+REM  Flask is usually already in requirements, but ensure it:
+pip install -q flask
 
-if "%MODE%"=="prod" (
-    pip install -q waitress
-) else (
-    REM  dev helpers (optional)
-    pip install -q flask
-)
+REM ─── 2.  Launch Flask dev server in a new window  ────────────────────
+echo [Backend]  Starting Flask dev server on http://localhost:5000 …
+start "Flask-Dev" cmd /k ^
+    "cd /d %cd% && call venv\Scripts\activate.bat && set FLASK_ENV=development && python app.py"
 
-REM ───── FRONTEND (only for dev or first-time prod build) ───
 cd ..
-set "NEED_REACT_BUILD="
-if "%MODE%"=="dev" (
-    cd frontend
-    if not exist node_modules npm install
-    echo.
-    echo [Frontend] Launching React dev server …
-    npm start
-    goto :EOF
-) else (
-    if not exist backend\index.html set "NEED_REACT_BUILD=1"
-)
 
-if defined NEED_REACT_BUILD (
-    echo.
-    echo [Frontend] Building React production bundle …
-    cd frontend
-    if not exist node_modules npm ci
-    npm run build
-    xcopy /EHY build\* ..\backend\ >nul
-    cd ..
-)
-
-REM ───── Run backend server (production) ────────────────────
+REM ─── 3.  Frontend – node install (first time) + npm start ───────────
 echo.
-echo [Backend] Starting Waitress on 0.0.0.0:5000 …
-cd backend
-start "" cmd /k "call venv\Scripts\activate.bat && waitress-serve --listen=0.0.0.0:5000 app:app"
-echo Done. Server is up.
+echo [Frontend] Preparing React dev server …
+cd frontend
+if not exist node_modules (
+    echo    Installing npm packages – this may take a minute …
+    npm install
+)
+
+echo.
+echo [Frontend] Launching http://localhost:3000  (Ctrl+C to stop) …
+npm start
+
+REM ─── 4.  Cleanup notice ─────────────────────────────────────────────
+echo.
+echo  React dev server stopped.  Close the "Flask-Dev" window too.
+pause

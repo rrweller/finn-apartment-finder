@@ -8,3 +8,4 @@ activate.bat
 *.dat
 *.dir
 /backend/venv
+frontend/.env
