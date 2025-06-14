@@ -12,6 +12,7 @@ from shapely.prepared import prep
 # ── internal modules ─────────────────────────────────────────────────────
 from finn_scraper import scrape_listings_polygon
 from geo_utils    import geocode_address, reverse_geocode, fetch_isoline
+import os
 
 # ─────────────────────────────────────────────────────────────────────────
 app = Flask(

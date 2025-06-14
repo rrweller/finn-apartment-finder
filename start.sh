@@ -1,38 +1,56 @@
 #!/usr/bin/env bash
-# ===================== Project launcher (bash) =====================
+# ===========================================================
+#  Unified launcher – Linux/macOS
+#  Usage:  ./start.sh          # development
+#          ./start.sh prod     # production
+# ===========================================================
 set -euo pipefail
-cd "$(dirname "$0")"
+MODE=${1:-dev}
 
-# ---------- BACKEND --------------------------------------------------
-echo "[1/2] Backend – creating / activating virtual-env …"
+ROOT="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+cd "$ROOT"
+
+# ───── persist GEOAPIFY_KEY (once) ───────────────────────────
+ENVFILE="$HOME/.finn_apartment_finder_env"
+[[ -f "$ENVFILE" ]] && source "$ENVFILE"
+
+if [[ -z "${GEOAPIFY_KEY:-}" ]]; then
+  read -rp "Enter your Geoapify API key: " GEOAPIFY_KEY
+  echo "export GEOAPIFY_KEY=$GEOAPIFY_KEY" >> "$ENVFILE"
+fi
+export GEOAPIFY_KEY
+
+# ───── BACKEND  (venv + deps) ───────────────────────────────
+echo "[Backend] Preparing Python env …"
 cd backend
+[[ -d venv ]] || python3 -m venv venv
+source venv/bin/activate
+pip install -q -r requirements.txt
+[[ $MODE == prod ]] && pip install -q gunicorn
 
-if [[ ! -d venv ]]; then
-  python3 -m venv venv
-fi
-
-# Robust activation – stop if it fails
-if [[ -f venv/bin/activate ]]; then
-  source venv/bin/activate
+# ───── FRONTEND  ─────────────────────────────────────────────
+cd "$ROOT"
+if [[ $MODE == dev ]]; then
+  echo "[Frontend] Dev server …"
+  cd frontend
+  [[ -d node_modules ]] || npm install
+  # backend (dev) in background
+  FLASK_ENV=development flask --app "$ROOT/backend/app.py" run --port 5000 &
+  BACK_PID=$!
+  npm start
+  kill "$BACK_PID"
+  exit
 else
-  echo "ERROR: venv/bin/activate not found. Virtual-env corrupted."; exit 1
+  # production – build once if index.html is missing
+  if [[ ! -f backend/index.html ]]; then
+    echo "[Frontend] Building production bundle …"
+    cd frontend
+    [[ -d node_modules ]] || npm ci
+    npm run build
+    rsync -a --delete build/ ../backend/
+  fi
 fi
 
-pip install --upgrade -r requirements.txt >/dev/null
-
-: "${GEOAPIFY_KEY:?GEOAPIFY_KEY not set – export it or type it now}"
-# If you really want an interactive prompt, uncomment:
-# if [[ -z "$GEOAPIFY_KEY" ]]; then read -rp "Enter GEOAPIFY_KEY: " GEOAPIFY_KEY; fi
-
-flask run --port 5000 &
-BACKEND_PID=$!
-cd ..
-
-# ---------- FRONTEND -------------------------------------------------
-echo "[2/2] Frontend – installing npm packages …"
-cd frontend
-[[ -d node_modules ]] || npm install
-npm start
-
-echo "Stopping backend (PID $BACKEND_PID)…"
-kill "$BACKEND_PID" 2>/dev/null || true
+# ───── Run backend server (production) ──────────────────────
+echo "[Backend] Starting Gunicorn on 0.0.0.0:5000 …"
+exec gunicorn --workers 3 --bind 0.0.0.0:5000 app:app

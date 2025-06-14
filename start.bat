@@ -1,54 +1,73 @@
 @echo off
-REM ===================== Project launcher (Windows) =====================
+REM ===========================================================
+REM  Unified launcher – Windows (cmd or PowerShell)
+REM  Usage:  start.bat          :: development
+REM          start.bat prod     :: production
+REM ===========================================================
+
+setlocal enabledelayedexpansion
 cd /d "%~dp0"
 
-REM ---------- BACKEND ---------------------------------------------------
-echo [1/2] Backend – creating / activating virtual-env …
-
-cd backend
-
-IF NOT EXIST venv (
-    echo Creating venv with "py -3" …
-    py -3 -m venv venv || (
-        echo.
-        echo Failed to create virtual-env. Do you have Python 3 installed?
-        pause
-        exit /b 1
-    )
+REM ───── choose mode ─────────────────────────────────────────
+if /I "%1"=="prod" (
+    set "MODE=prod"
+) else (
+    set "MODE=dev"
 )
 
-REM --- find an activation script that exists ---------------------------
-SET "ACTIVATE_BAT=venv\Scripts\activate.bat"
-SET "ACTIVATE_PS=venv\Scripts\Activate.ps1"
-
-IF EXIST "%ACTIVATE_BAT%" (
-    call "%ACTIVATE_BAT%"
-) ELSE IF EXIST "%ACTIVATE_PS%" (
-    REM Invoke PowerShell to source the PS1 if cmd version missing
-    powershell -NoLogo -Command "& { & '%ACTIVATE_PS%' ; Invoke-Expression $env:ComSpec }"
-) ELSE (
-    echo.
-    echo ERROR: Can’t find activation script in venv\Scripts.
-    echo Your virtual-env is incomplete – reinstall Python.
-    pause
-    exit /b 1
-)
-
-echo Installing backend packages …
-pip install --upgrade -r requirements.txt >nul
-
-IF "%GEOAPIFY_KEY%"=="" (
+REM ───── persist GEOAPIFY_KEY (once) ─────────────────────────
+for /f "tokens=2*" %%a in ('reg query "HKCU\Environment" /v GEOAPIFY_KEY 2^>nul') do set "GEOAPIFY_KEY=%%b"
+if "%GEOAPIFY_KEY%"=="" (
+    echo Geoapify API key not found.
     set /p GEOAPIFY_KEY=Enter your Geoapify API key: 
+    REM  store permanently for this user
+    setx GEOAPIFY_KEY "%GEOAPIFY_KEY%" >nul
 )
 
-start "Flask-Backend" cmd /k "cd /d %%cd%% && call %ACTIVATE_BAT% && flask run --port 5000"
+REM ───── BACKEND  (venv + deps) ─────────────────────────────
+echo.
+echo [Backend] Preparing Python env …
+cd backend
+if not exist venv (
+    py -3 -m venv venv
+)
+call venv\Scripts\activate.bat
+pip install -q -r requirements.txt
 
+if "%MODE%"=="prod" (
+    pip install -q waitress
+) else (
+    REM  dev helpers (optional)
+    pip install -q flask
+)
+
+REM ───── FRONTEND (only for dev or first-time prod build) ───
 cd ..
+set "NEED_REACT_BUILD="
+if "%MODE%"=="dev" (
+    cd frontend
+    if not exist node_modules npm install
+    echo.
+    echo [Frontend] Launching React dev server …
+    npm start
+    goto :EOF
+) else (
+    if not exist backend\index.html set "NEED_REACT_BUILD=1"
+)
 
-REM ---------- FRONTEND --------------------------------------------------
-echo [2/2] Frontend – installing npm packages …
-cd frontend
-IF NOT EXIST node_modules npm install
+if defined NEED_REACT_BUILD (
+    echo.
+    echo [Frontend] Building React production bundle …
+    cd frontend
+    if not exist node_modules npm ci
+    npm run build
+    xcopy /EHY build\* ..\backend\ >nul
+    cd ..
+)
 
-echo Launching React dev server …
-npm start
+REM ───── Run backend server (production) ────────────────────
+echo.
+echo [Backend] Starting Waitress on 0.0.0.0:5000 …
+cd backend
+start "" cmd /k "call venv\Scripts\activate.bat && waitress-serve --listen=0.0.0.0:5000 app:app"
+echo Done. Server is up.
