@@ -1,6 +1,7 @@
 // src/App.js
 import React, { useState } from "react";
 import MapView from "./components/MapView";
+import { ISO_COLORS } from "./colors";
 
 // Transport mode options
 const MODE_OPTIONS = [
@@ -28,14 +29,14 @@ const SHOW_QUERY_POLY = false;          // ⇦ turn to false to hide outline
 export default function App() {
   /* ─── state ─────────────────────────────────────────────────────────── */
   const [workLocs, setWorkLocs] = useState([
-    { address: "", time: 20, mode: "drive", lat: null, lon: null },
+    { address: "", time: 15, mode: "transit", lat: null, lon: null },
   ]);
 
   const [rentMin,   setRentMin]   = useState(0);
-  const [rentMax,   setRentMax]   = useState(15000);
+  const [rentMax,   setRentMax]   = useState(25000);
   const [sizeMin,   setSizeMin]   = useState(0);
   const [sizeMax,   setSizeMax]   = useState(0);
-  const [boligtype, setBoligtype] = useState("");
+  const [boligtype, setBoligtype] = useState("leilighet");
 
   const [isolineData,   setIsolineData] = useState(null);
   const [listings,      setListings]    = useState([]);
@@ -160,6 +161,15 @@ export default function App() {
                       )
                     )
                   }
+                />
+                {/* coloured dot */}
+                <span
+                  style={{
+                    width: 12, height: 12,
+                    borderRadius: "50%",
+                    background: ISO_COLORS[idx % ISO_COLORS.length],
+                    marginLeft: 6
+                  }}
                 />
                 <input
                   type="number"
@@ -303,8 +313,8 @@ export default function App() {
         <MapView
           isolineData={isolineData}
           listings={listings}
-          workPins={workLocs}          /* ⇦ NEW */
-          showQueryPoly={SHOW_QUERY_POLY} /* ⇦ NEW */
+          workPins={workLocs}
+          showQueryPoly={SHOW_QUERY_POLY}
           pickingActive={awaitingPickRow !== null}
           onPick={handleMapPick}
         />

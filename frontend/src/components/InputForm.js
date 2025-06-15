@@ -19,7 +19,7 @@ export default function InputForm({
   const addRow = () =>
     setWorkLocs([
       ...workLocs,
-      { address: "", time: 20, mode: "drive" },
+      { address: "", time: 15, mode: "transit" },
     ]);
 
   const updateRow = (idx, field, value) =>

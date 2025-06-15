@@ -11,13 +11,13 @@ import {
 } from "react-leaflet";
 import MarkerClusterGroup from "react-leaflet-cluster";
 import L from "leaflet";
+import { ISO_COLORS } from "../colors";
 import "leaflet/dist/leaflet.css";
 import "leaflet.markercluster/dist/MarkerCluster.css";
 import "leaflet.markercluster/dist/MarkerCluster.Default.css";
 import "leaflet.pattern";                       // npm i leaflet.pattern
 
 /* ─── colour constants ───────────────────────────────────────────────── */
-const ISO_COLORS          = ["#bb86fc","#03dac6","#cf6679","#3700b3","#018786","#ff0266"];
 const INTERSECTION_COLOR  = "#00e0ff";         // cyan for area, outline, stripes
 const QUERY_STROKE        = "#ffd600";         // yellow convex hull outline
 const STADIA_KEY = process.env.REACT_APP_STADIA_KEY;
@@ -32,7 +32,17 @@ function PriceIcon(price) {
            </div>`,
   });
 }
-const WorkPin = new L.Icon.Default();
+
+function WorkPin(color) {
+  return L.divIcon({
+    className: "color-pin",
+    html: `<div style="
+             background:${color};
+             width:18px;height:18px;
+             border-radius:50%;
+             border:2px solid #fff"></div>`
+  });
+}
 
 function ClickCapture({ enabled, onPick }) {
   useMapEvents({ click: e => enabled && onPick(e.latlng) });
@@ -150,7 +160,7 @@ export default function MapView({
             <Marker
               key={`work-${idx}`}
               position={[p.lat, p.lon]}
-              icon={WorkPin}
+              icon={WorkPin(ISO_COLORS[idx % ISO_COLORS.length])}
             >
               <Tooltip direction="top" offset={[0, -6]} opacity={0.9}>
                 {p.address}

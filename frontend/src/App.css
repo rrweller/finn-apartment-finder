@@ -46,6 +46,9 @@ html, body, #root {
 .form-group {
   display:flex; align-items:center; gap:12px; flex-wrap:wrap;
 }
+.entry-block .form-group + .form-group {
+  margin-top: 12px;     /* ← tweak to taste */
+}
 .label-inline {
   min-width:30px;
   color: var(--text-secondary);
