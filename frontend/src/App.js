@@ -342,6 +342,12 @@ export default function App() {
             <div className="spinner" /> Loading apartments…
           </div>
         )}
+        {/* Results */}
+        {!loading && listings.length > 0 && (
+          <div className="results-count">
+            Found {listings.length} apartments
+          </div>
+        )}
       </aside>
 
       <main className="map-pane">

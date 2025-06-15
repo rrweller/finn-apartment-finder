@@ -219,6 +219,14 @@ button           { font-size: 14px; border: none; border-radius: 6px; cursor: po
   animation: spin .8s linear infinite;
 }
 
+.results-count {
+  padding: 12px;
+  font-size: 14px;
+  color: var(--text-secondary);
+  border-top: 1px solid #333;
+  margin-top: 8px;
+}
+
 /* 8 ── Animations ------------------------------------------------------ */
 @keyframes spin { to { transform: rotate(360deg); } }
 
