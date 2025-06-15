@@ -48,9 +48,23 @@ NEED_BUILD=$FORCE_BUILD
 if $NEED_BUILD; then
   echo "[Frontend] Building production bundle …"
   cd "$FRONTEND"
+
+  # install JS deps only when node_modules is missing
   [[ -d node_modules ]] || npm ci --silent
+
   npm run build --silent
-  rsync -a --delete "$FRONTEND/build/" "$BACKEND/"
+
+  # ---------- copy bundle without nuking backend/python stuff -------------
+  BUILD_DIR="$FRONTEND/build"
+  STATIC_DST="$BACKEND/static"
+
+  mkdir -p "$STATIC_DST"
+
+  # 1) synchronise static assets, delete old chunks that are no longer built
+  rsync -a --delete "$BUILD_DIR/static/" "$STATIC_DST/"
+
+  # 2) copy top-level files that React puts next to static/
+  cp -u "$BUILD_DIR"/{index.html,manifest.json,robots.txt,*.ico}  "$BACKEND/" 2>/dev/null || true
 fi
 
 # ───   3. Launch Gunicorn        ─────────────────────────────────────────────
