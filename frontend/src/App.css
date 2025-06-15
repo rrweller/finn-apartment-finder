@@ -117,6 +117,58 @@ button {
   font-size: 13px;
 }
 
+/* ─── prettier BedroomSelector ──────────────────────────────────────── */
+.bedroom-bar {
+  /* 1️⃣ – fill the available space next to the “Soverom” label */
+  flex: 1;
+  width: 100%;
+
+  /* equal columns, tidy borders */
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.bedroom-btn {
+  /* centre the label nicely */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: transparent;
+  padding: 8px 0;
+  border: none;
+  cursor: pointer;
+  position: relative;               /* for the divider line */
+  transition: background .15s, color .15s;
+}
+
+/* subtle divider between segments */
+.bedroom-btn:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 1px;
+  height: 100%;
+  background: var(--input-border);
+}
+
+.bedroom-btn:hover {
+  background: #333;
+  color: var(--text);
+}
+
+.bedroom-btn.active {
+  background: var(--accent);
+  color: var(--btn-text);
+}
+
 /* ─── speech-bubble marker ────────────────────────────────────────────── */
 .price-bubble-container {
   display: inline-block;

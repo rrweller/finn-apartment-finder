@@ -4,6 +4,7 @@ import MapView from "./components/MapView";
 import { ISO_COLORS } from "./colors";
 import Select from "react-select";
 import {MODE_OPTIONS, BOLIGTYPE_OPTIONS, FACILITY_OPTS, FLOOR_OPTS } from "./filterOptions";
+import BedroomSelector from "./components/BedroomSelector";
 
 const SHOW_QUERY_POLY = false;          // ⇦ turn to false to hide outline
 
@@ -17,6 +18,7 @@ export default function App() {
   const [rentMax,   setRentMax]   = useState(25000);
   const [sizeMin,   setSizeMin]   = useState(0);
   const [sizeMax,   setSizeMax]   = useState(0);
+  const [bedrooms, setBedrooms] = useState(0);
   const [boligtypes, setBoligtypes] = useState(
     BOLIGTYPE_OPTIONS.filter(o => o.value === "leilighet")   // default chip
   );
@@ -80,54 +82,50 @@ export default function App() {
   };
 
   /* ─── main search button ─────────────────────────────────────────── */
-  const handleSearch = async e => {
+  const handleSearch = async (e) => {
     e.preventDefault();
+
+    /* build worker-payload (addresses + commute times) */
     const payload = workLocs
       .filter(l => l.address.trim())
       .map(l => ({ ...l, time: Number(l.time) }));
-    if (!payload.length) {
-      alert("Add at least one work address.");
-      return;
-    }
+    if (!payload.length) { alert("Add at least one work address."); return; }
+
+    /* CSV strings for backend */
+    const typeCSV  = boligtypes.map(o => o.value).join(",");
+    const facCSV   = facilities.map(o => o.value).join(",");
+    const floorCSV = floors.map(o => o.value).join(",");
 
     setLoading(true);
     try {
       /* 1) isolines */
-      const isoRes = await fetch("/api/isolines", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ locations: payload }),
-      });
-      if (!isoRes.ok) throw new Error("Isoline error");
-      const iso = await isoRes.json();
-      const token = iso.token;
-      if (!iso.features.length) {
-        alert("Could not build commute area.");
-        return;
-      }
+      const iso = await (await fetch("/api/isolines", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body:JSON.stringify({ locations: payload }),
+      })).json();
+      if (!iso.features?.length) { alert("Could not build commute area."); return; }
       setIsolineData(iso);
 
-      /* 2) listings */
-      const params = new URLSearchParams({
+      /* 2) FINN listings */
+      const qs = new URLSearchParams({
         rent_min: rentMin,
         rent_max: rentMax,
         size_min: sizeMin,
         size_max: sizeMax,
-        boligtype: boligtypes.map(o => o.value).join(","),
-        facilities: facilities.map(o => o.value).join(","),
-        floor:      floors.map(o => o.value).join(","),
-        token,
+        boligtype: typeCSV,
+        facilities: facCSV,
+        floor: floorCSV,
+        token: iso.token,
       });
-      const lstRes = await fetch(`/api/listings?${params}`);
-      if (!lstRes.ok) {
-        const err = await lstRes.json();
-        alert(err.error || "Listing error");
-        return;
-      }
-      setListings(await lstRes.json());
+      if (bedrooms) qs.set("min_bedrooms", bedrooms);
+
+      const res = await fetch(`/api/listings?${qs}`);
+      if (!res.ok) { alert("Listing error"); return; }
+      setListings(await res.json());
     } catch (err) {
       console.error(err);
-      alert("Something went wrong – check console.");
+      alert("Network error – see console.");
     } finally {
       setLoading(false);
     }
@@ -277,6 +275,12 @@ export default function App() {
               onChange={(e) => setSizeMax(e.target.value)}
             />
             <span className="label-unit">m²</span>
+          </div>
+
+          {/* Bedrooms */}
+          <div className="form-group">
+            <label className="label-inline">Soverom</label>
+            <BedroomSelector value={bedrooms} onChange={setBedrooms} />
           </div>
 
           {/* Type */}

@@ -179,7 +179,7 @@ def api_listings():
     rent_max  = int(request.args.get("rent_max", 0) or 0)
     size_min  = int(request.args.get("size_min", 0) or 0)
     size_max  = int(request.args.get("size_max", 0) or 0)
-
+    bed_min   = int(request.args.get("min_bedrooms", 0) or 0)
     type_list  = {v.lower() for v in request.args.get("boligtype", "").split(",") if v}
     facility_list = {v.lower() for v in request.args.get("facilities", "").split(",") if v}
     floor_list    = {v.lower() for v in request.args.get("floor", "").split(",") if v}
@@ -189,9 +189,8 @@ def api_listings():
 
     # 2) build a cache-key that changes whenever *any* filter changes
     sig = "|".join([
-        poly_param,
-        str(rent_min), str(rent_max),
-        str(size_min), str(size_max),
+        poly_param, str(rent_min), str(rent_max),
+        str(size_min), str(size_max), str(bed_min),
         ",".join(sorted(type_list)),
         ",".join(sorted(facility_list)),
         ",".join(sorted(floor_list)),
@@ -227,6 +226,7 @@ def api_listings():
                 floors         = floor_list,
                 area_from      = size_min or None,
                 area_to        = size_max or None,
+                bedrooms_min   = bed_min or None,
             )
             save_cache(cache_key, rent_max, raw)
 

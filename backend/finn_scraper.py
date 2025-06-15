@@ -68,18 +68,19 @@ def scrape_listings_polygon(
         floors:         Sequence[str] = (),
         area_from: int | None = None,
         area_to:   int | None = None,
+        bedrooms_min: int | None = None,
     ):
-    """Fetch FINN result pages for one polygon + filter set.
-       If pages == 0 we only print the URL and return []."""
+    """Fetch FINN result pages for one polygon + filter set."""
     base = "https://www.finn.no/realestate/lettings/search.html"
 
-    # build query param list exactly like FINN’s own UI
-    params: List[Tuple[str, str]] = [
+    params: list[tuple[str, str]] = [
         ("polylocation", polylocation),
         ("price_to",     str(price_max)),
     ]
     if price_min:
         params.append(("price_from", str(price_min)))
+    if bedrooms_min:
+        params.append(("min_bedrooms", str(bedrooms_min)))
 
     for t in property_types:
         if t in TYPE_MAP:
@@ -90,40 +91,29 @@ def scrape_listings_polygon(
     for fl in floors:
         if fl in FLOOR_MAP:
             params.append(("floor_navigator", FLOOR_MAP[fl]))
-
     if area_from is not None:
         params.append(("area_from", str(area_from)))
-    if area_to   is not None:
-        params.append(("area_to",   str(area_to)))
+    if area_to is not None:
+        params.append(("area_to", str(area_to)))
 
-    # log once – always
     print("[Finn URL]", f"{base}?{urlencode(params, doseq=True)}")
 
-    # early-exit mode used by api_listings to just print the URL
-    if pages == 0:
-        return []
-
-    rows: List[Dict] = []
-
+    rows: list[dict] = []
     for pg in range(1, pages + 1):
         page_params = params + [("page", str(pg))]
-        r = requests.get(
-            base,
-            params=page_params,
-            headers=HEADERS,
-            timeout=15,
-        )
+        r = requests.get(base, params=page_params, headers=HEADERS, timeout=15)
         if r.status_code != 200:
             break
         soup = BeautifulSoup(r.text, "html.parser")
         arts = soup.find_all("article")
         if not arts:
-            break          # last page reached
+            break
         for art in arts:
             d = _parse(art)
             if d:
                 rows.append(d)
-        time.sleep(0.5)    # be polite to FINN
+        time.sleep(0.5)
 
-    print(f"[Finn] harvested {len(rows)} rows (polygon)")
+    print(f"[Finn] harvested {len(rows)} rows")
     return rows
+
