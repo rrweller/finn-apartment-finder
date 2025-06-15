@@ -112,6 +112,11 @@ button {
   white-space: normal;
 }
 
+.css-1hb7zxy-Components__MultiValue,   /* react-select v5 classname */
+.css-1rhbuit-multiValue {
+  font-size: 13px;
+}
+
 /* ─── speech-bubble marker ────────────────────────────────────────────── */
 .price-bubble-container {
   display: inline-block;

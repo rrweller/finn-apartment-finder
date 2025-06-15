@@ -2,7 +2,9 @@
 import html
 import re
 import time
-from typing import Dict, List
+from typing import Dict, List, Sequence, Tuple
+from finn_maps import TYPE_MAP, FACILITY_MAP, FLOOR_MAP
+from urllib.parse import urlencode
 
 import requests
 from bs4 import BeautifulSoup
@@ -56,21 +58,50 @@ def _parse(article) -> Dict:
 
 # ─── public scraper using geoPolygon ────────────────────────────────────────
 def scrape_listings_polygon(
-    polylocation: str, price_max: int, pages: int = 50
-):
-    """
-    Query FINN with the hidden `polylocation` parameter (free-hand polygon).
-    """
+        polylocation: str,
+        price_min: int | None,
+        price_max: int,
+        *,
+        pages: int = 50,
+        property_types: Sequence[str] = (),
+        facilities:     Sequence[str] = (),
+        floors:         Sequence[str] = (),
+        area_from: int | None = None,
+        area_to:   int | None = None,
+    ):
     base = "https://www.finn.no/realestate/lettings/search.html"
+    params: List[Tuple[str, str]] = [
+        ("polylocation", polylocation),
+        ("price_to",     str(price_max)),
+    ]
+    if price_min:
+        params.append(("price_from", str(price_min)))
+
+    for t in property_types:
+        if t in TYPE_MAP:
+            params.append(("property_type", TYPE_MAP[t]))
+    for f in facilities:
+        if f in FACILITY_MAP:
+            params.append(("facilities", FACILITY_MAP[f]))
+    for fl in floors:
+        if fl in FLOOR_MAP:
+            params.append(("floor_navigator", FLOOR_MAP[fl]))
+
+    if area_from is not None:
+        params.append(("area_from", str(area_from)))
+    if area_to   is not None:
+        params.append(("area_to",   str(area_to)))
+
     rows = []
+    print("[Finn URL]", f"{base}?{urlencode(params, doseq=True)}")
 
     for pg in range(1, pages + 1):
+        page_params = params + [("page", str(pg))]
         r = requests.get(
             base,
-            params={"polylocation": polylocation,
-                    "price_to": price_max,
-                    "page": pg},
-            headers=HEADERS, timeout=15,
+            params=page_params,        # every filter travels along
+            headers=HEADERS,
+            timeout=15,
         )
         if r.status_code != 200:
             break

@@ -1,5 +1,7 @@
 /* InputForm.js */
-const MODES = [
+import MODE_OPTIONS from "./filterOptions";
+
+const MODE_OPTIONS = [
   { value: "drive", label: "Car 🚗" },
   { value: "transit", label: "Transit 🚌" },
   { value: "bicycle", label: "Bike 🚴" },
@@ -73,7 +75,7 @@ export default function InputForm({
               updateRow(idx, "mode", e.target.value)
             }
           >
-            {MODES.map((m) => (
+            {MODE_OPTIONS.map((m) => (
               <option key={m.value} value={m.value}>
                 {m.label}
               </option>

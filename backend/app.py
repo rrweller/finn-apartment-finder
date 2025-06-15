@@ -132,16 +132,18 @@ def api_isolines():
         intersection = poly if intersection is None else intersection.intersection(poly)
 
     if feats_out and intersection and not intersection.is_empty:
-        single      = (intersection.convex_hull
+        simple      = (intersection.convex_hull
                        if isinstance(intersection, MultiPolygon) else intersection)
-        poly_param  = build_polylocation_param(single)
+        poly_param  = build_polylocation_param(simple)
+
+        # ② exact intersection kept for server-side filtering
         token       = hashlib.sha1(poly_param.encode()).hexdigest()
-        (POLY_STORE / f"{token}.wkb").write_bytes(single.wkb)
+        (POLY_STORE / f"{token}.wkb").write_bytes(intersection.wkb)   # << store real area
 
         # debug layers
         feats_out.append({"type":"Feature","geometry":mapping(intersection),
                           "properties":{"intersection":True}})
-        feats_out.append({"type":"Feature","geometry":mapping(single),
+        feats_out.append({"type":"Feature","geometry":mapping(simple),
                           "properties":{"query":True}})
 
         print(f"[Iso] OK  modes={modes}")
@@ -176,7 +178,14 @@ def api_listings():
     rent_max  = int(request.args.get("rent_max", 0) or 0)
     size_min  = int(request.args.get("size_min", 0) or 0)
     size_max  = int(request.args.get("size_max", 0) or 0)
-    boligtype = request.args.get("boligtype", "").strip().lower()
+    types_csv      = request.args.get("boligtype", "")
+    type_list       = {v.lower() for v in types_csv.split(",") if v}      # may be empty
+
+    fac_csv        = request.args.get("facilities", "")
+    facility_list   = {v.lower() for v in fac_csv.split(",") if v}
+
+    floor_csv      = request.args.get("floor", "")
+    floor_list      = {v for v in floor_csv.split(",") if v}
     if rent_max <= 0:
         return jsonify({"error": "valid rent_max required"}), 400
 
@@ -187,8 +196,17 @@ def api_listings():
     lock_fn   = str(cache_fn) + ".lock"
     with FileLock(lock_fn, timeout=570):        # 9½ min < gunicorn 600
         raw = load_cache(cache_key, rent_max)
-        if raw is None:                         # first worker does the scrape
-            raw = scrape_listings_polygon(poly_param, rent_max)
+        if raw is None:           # first worker does the scrape
+            raw = scrape_listings_polygon(
+                poly_param,
+                rent_min or None,
+                rent_max, 
+                property_types = type_list,
+                facilities     = facility_list,
+                floors         = floor_list,
+                area_from      = size_min or None,
+                area_to        = size_max or None,
+                )
             save_cache(cache_key, rent_max, raw)
 
     # ── 3. filter + geocode ────────────────────────────────────────────
@@ -202,12 +220,8 @@ def api_listings():
 
         if p < rent_min or p > rent_max:           continue
         cnt_price += 1
-        if size_min and s < size_min:              continue
-        if size_max and s > size_max:              continue
         cnt_size += 1
-        if boligtype and t != boligtype:           continue
         cnt_type += 1
-
         addr = f"{ad['address']}, Norway"
         gcache.setdefault(addr, geocode_address(addr))
         coords = gcache[addr]

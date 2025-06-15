@@ -2,27 +2,8 @@
 import React, { useState } from "react";
 import MapView from "./components/MapView";
 import { ISO_COLORS } from "./colors";
-
-// Transport mode options
-const MODE_OPTIONS = [
-  { value: "drive",   label: "Car 🚗" },
-  { value: "transit", label: "Transit 🚌" },
-  { value: "bicycle", label: "Bike 🚴" },
-  { value: "walk",    label: "Walk 🚶" },
-];
-
-// Boligtype options
-const BOLIGTYPE_OPTIONS = [
-  { value: "",                   label: "All types" },
-  { value: "enebolig",           label: "Enebolig" },
-  { value: "garasje/parkering",  label: "Garasje/Parkering" },
-  { value: "hybel",              label: "Hybel" },
-  { value: "leilighet",          label: "Leilighet" },
-  { value: "rekkehus",           label: "Rekkehus" },
-  { value: "rom i bofellesskap", label: "Rom i bofellesskap" },
-  { value: "tomannsbolig",       label: "Tomannsbolig" },
-  { value: "andre",              label: "Andre" },
-];
+import Select from "react-select";
+import {MODE_OPTIONS, BOLIGTYPE_OPTIONS, FACILITY_OPTS, FLOOR_OPTS } from "./filterOptions";
 
 const SHOW_QUERY_POLY = false;          // ⇦ turn to false to hide outline
 
@@ -36,7 +17,12 @@ export default function App() {
   const [rentMax,   setRentMax]   = useState(25000);
   const [sizeMin,   setSizeMin]   = useState(0);
   const [sizeMax,   setSizeMax]   = useState(0);
-  const [boligtype, setBoligtype] = useState("leilighet");
+  const [boligtypes, setBoligtypes] = useState(
+    BOLIGTYPE_OPTIONS.filter(o => o.value === "leilighet")   // default chip
+  );
+  const [facilities, setFacilities] = useState([]);   // multiselect
+  const [floors,     setFloors]     = useState([]);   // multiselect
+
 
   const [isolineData,   setIsolineData] = useState(null);
   const [listings,      setListings]    = useState([]);
@@ -79,6 +65,20 @@ export default function App() {
     }
   };
 
+  const selectStyles = {
+    control:  (base) => ({ ...base, background:"#2c2c2c", borderColor:"#444",
+                          minHeight:38 }),
+    menu:     (base) => ({ ...base, background:"#2c2c2c" }),
+    option:   (base, s) => ({ ...base, background:s.isFocused?"#333":"inherit",
+                              ":active":{background:"#555"} }),
+    multiValue: (base) => ({ ...base, background:"#444" }),
+    multiValueLabel: (base) => ({ ...base, color:"#e0e0e0" }),
+    multiValueRemove:(base)=> ({ ...base, ":hover":{background:"#666"} }),
+    placeholder:(base)=> ({ ...base, color:"#888" }),
+    singleValue:(base)=> ({ ...base, color:"#e0e0e0" }),
+    input:      (base)=> ({ ...base, color:"#e0e0e0" }),
+  };
+
   /* ─── main search button ─────────────────────────────────────────── */
   const handleSearch = async e => {
     e.preventDefault();
@@ -113,7 +113,9 @@ export default function App() {
         rent_max: rentMax,
         size_min: sizeMin,
         size_max: sizeMax,
-        boligtype,
+        boligtype: boligtypes.map(o => o.value).join(","),
+        facilities: facilities.map(o => o.value).join(","),
+        floor:      floors.map(o => o.value).join(","),
         token,
       });
       const lstRes = await fetch(`/api/listings?${params}`);
@@ -280,17 +282,46 @@ export default function App() {
           {/* Type */}
           <div className="form-group">
             <label className="label-inline">Type</label>
-            <select
-              className="select-type"
-              value={boligtype}
-              onChange={(e) => setBoligtype(e.target.value)}
-            >
-              {BOLIGTYPE_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
+            <div style={{ flex: 1 }}>
+              <Select
+                options={BOLIGTYPE_OPTIONS}
+                value={boligtypes}
+                onChange={setBoligtypes}
+                isMulti
+                placeholder="All types"
+                styles={selectStyles}
+              />
+           </div>
+          </div>
+
+          {/* Facilities */}
+          <div className="form-group">
+            <label className="label-inline">Facil.</label>
+            <div style={{ flex: 1 }}>
+              <Select
+                options={FACILITY_OPTS}
+                value={facilities}
+                onChange={setFacilities}
+                isMulti
+                placeholder="Select…"
+                styles={selectStyles}
+              />
+            </div>
+          </div>
+
+          {/* Floor */}
+          <div className="form-group">
+            <label className="label-inline">Floor</label>
+            <div style={{ flex: 1 }}>
+              <Select
+                options={FLOOR_OPTS}
+                value={floors}
+                onChange={setFloors}
+                isMulti
+                placeholder="Any"
+                styles={selectStyles}
+              />
+            </div>
           </div>
 
           {/* Search */}
