@@ -91,7 +91,7 @@ button           { font-size: 14px; border: none; border-radius: 6px; cursor: po
 .btn-pin,
 .btn-add         { background: var(--input-bg); color: var(--accent); padding: 6px 10px; }
 
-.btn-remove      { background: var(--input-bg); color: #c42b17;  padding: 6px 10px; }
+.btn-remove      { background: var(--input-bg); color: #BB86FC;  padding: 6px 10px; }
 
 .btn-search      { background: var(--btn-bg); color: var(--btn-text); padding: 10px 18px;
                    transition: background .2s; }
