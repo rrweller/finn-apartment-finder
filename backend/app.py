@@ -9,6 +9,7 @@ from flask_cors import CORS
 from shapely.geometry import Point, Polygon, MultiPolygon, mapping
 from shapely.prepared import prep
 from shapely import wkb
+from filelock import FileLock
 
 # ── internal modules ─────────────────────────────────────────────────────
 from finn_scraper import scrape_listings_polygon
@@ -182,10 +183,13 @@ def api_listings():
     # ── 2. scrape or load FINN cache ───────────────────────────────────
     t0        = time.perf_counter()
     cache_key = hashlib.sha1(poly_param.encode()).hexdigest()
-
-    raw = load_cache(cache_key, rent_max) \
-          or scrape_listings_polygon(poly_param, rent_max)
-    save_cache(cache_key, rent_max, raw)
+    cache_fn  = _cache_path(cache_key, rent_max)
+    lock_fn   = str(cache_fn) + ".lock"
+    with FileLock(lock_fn, timeout=570):        # 9½ min < gunicorn 600
+        raw = load_cache(cache_key, rent_max)
+        if raw is None:                         # first worker does the scrape
+            raw = scrape_listings_polygon(poly_param, rent_max)
+            save_cache(cache_key, rent_max, raw)
 
     # ── 3. filter + geocode ────────────────────────────────────────────
     inside, gcache = [], {}
