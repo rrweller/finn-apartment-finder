@@ -21,6 +21,7 @@ const ISO_COLORS          = ["#bb86fc","#03dac6","#cf6679","#3700b3","#018786","
 const INTERSECTION_COLOR  = "#00e0ff";         // cyan for area, outline, stripes
 const QUERY_STROKE        = "#ffd600";         // yellow convex hull outline
 const STADIA_KEY = process.env.REACT_APP_STADIA_KEY;
+const showQueryArea = false;
 
 /* ─── icon helpers ───────────────────────────────────────────────────── */
 function PriceIcon(price) {
@@ -93,7 +94,7 @@ export default function MapView({
         fillPattern:  stripePattern,
       };
     }
-    if (p.query) {
+    if (p.query && showQueryArea) {
       return {
         color:        QUERY_STROKE,
         weight:       2,
