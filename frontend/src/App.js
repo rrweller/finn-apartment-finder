@@ -99,6 +99,7 @@ export default function App() {
       });
       if (!isoRes.ok) throw new Error("Isoline error");
       const iso = await isoRes.json();
+      const token = iso.token;
       if (!iso.features.length) {
         alert("Could not build commute area.");
         return;
@@ -112,6 +113,7 @@ export default function App() {
         size_min: sizeMin,
         size_max: sizeMax,
         boligtype,
+        token,
       });
       const lstRes = await fetch(`/api/listings?${params}`);
       if (!lstRes.ok) {

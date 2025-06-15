@@ -49,16 +49,32 @@ def _open_cache(flag: str = "r"):
         raise
 
 def _get_cached(address: str):
+    """
+    Return (lat, lon) from the on-disk shelve if the entry is still fresh,
+    otherwise delete the stale record and return None.
+    """
+    # ---------- 1) try read-only ----------------------
     db = _open_cache("r")
-    rec = db.get(address)
-    if not rec:
-        return None
-    lat, lon, ts = rec
-    ts = datetime.datetime.fromisoformat(ts)
-    if datetime.datetime.utcnow() - ts < TTL:
-        return (lat, lon)
-    # stale
-    del db[address]
+    try:
+        rec = db.get(address)
+        if not rec:
+            return None
+
+        lat, lon, ts = rec
+        ts = datetime.datetime.fromisoformat(ts)
+        if datetime.datetime.utcnow() - ts < TTL:
+            return (lat, lon)
+    finally:
+        db.close()
+
+    # ---------- 2) record is stale → reopen writable --
+    db = _open_cache("w")          # same lock mechanism inside
+    try:
+        if address in db:
+            del db[address]        # now permitted
+            db.sync()
+    finally:
+        db.close()
     return None
 
 def _set_cached(address: str, lat: float, lon: float):

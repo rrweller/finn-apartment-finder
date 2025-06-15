@@ -1,6 +1,6 @@
 #app.py
 # ── stdlib ───────────────────────────────────────────────────────────────
-import csv, datetime, json, pathlib, time, hashlib, os, tempfile, shutil
+import csv, datetime, json, pathlib, time, hashlib, os, tempfile, shutil, pickle
 from typing import List, Tuple
 
 # ── 3rd-party ────────────────────────────────────────────────────────────
@@ -8,6 +8,7 @@ from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from shapely.geometry import Point, Polygon, MultiPolygon, mapping
 from shapely.prepared import prep
+from shapely import wkb
 
 # ── internal modules ─────────────────────────────────────────────────────
 from finn_scraper import scrape_listings_polygon
@@ -29,9 +30,8 @@ app = Flask(
 )
 CORS(app)
 
-PREPARED_UNION = None      # shapely prepared polygon for fast tests
-POLY_PARAM     = ""        # "lon lat,lon lat,…" sent to FINN
-
+POLY_STORE = CACHE_DIR / "polygons"
+POLY_STORE.mkdir(exist_ok=True)
 
 # ░░ 1.  React build fallback ░░
 @app.route("/", defaults={"path": ""})
@@ -129,16 +129,13 @@ def api_isolines():
         poly = shape(fc["features"][0]["geometry"])
         intersection = poly if intersection is None else intersection.intersection(poly)
 
-    global PREPARED_UNION, POLY_PARAM
-    PREPARED_UNION = None
-    POLY_PARAM     = ""
-
     if feats_out and intersection and not intersection.is_empty:
-        PREPARED_UNION = prep(intersection)
-
         single = (intersection.convex_hull
                   if isinstance(intersection, MultiPolygon) else intersection)
+        
         POLY_PARAM = build_polylocation_param(single)
+        token = hashlib.sha1(POLY_PARAM.encode()).hexdigest()
+        (POLY_STORE / f"{token}.wkb").write_bytes(single.wkb)
 
         # add debug layers
         feats_out.append({"type":"Feature","geometry":mapping(intersection),
@@ -150,30 +147,47 @@ def api_isolines():
     else:
         print("[Iso] ERROR – no usable polygon")
 
-    return jsonify({"type":"FeatureCollection","features":feats_out})
+    return jsonify({
+        "type": "FeatureCollection",
+        "features": feats_out,
+        "token": token,
+    })
 
 
 # ░░ 5.  /api/listings ░░
 @app.get("/api/listings")
 def api_listings():
-    if PREPARED_UNION is None or not POLY_PARAM:
-        return jsonify({"error":"run isolines first"}), 400
+    # ── 0. retrieve polygon by token ───────────────────────────────────
+    token = request.args.get("token", "").strip()
+    if not token:
+        return jsonify({"error": "token missing"}), 400
 
-    rent_min  = int(request.args.get("rent_min",0) or 0)
-    rent_max  = int(request.args.get("rent_max",0) or 0)
-    size_min  = int(request.args.get("size_min",0) or 0)
-    size_max  = int(request.args.get("size_max",0) or 0)
-    boligtype = request.args.get("boligtype","").strip().lower()
+    poly_path = POLY_STORE / f"{token}.wkb"
+    if not poly_path.exists():
+        return jsonify({"error": "invalid token"}), 400
+
+    geom            = wkb.loads(poly_path.read_bytes())
+    prepared_union  = prep(geom)                       # fast contains()
+    poly_param      = build_polylocation_param(geom)   # for FINN queries
+
+    # ── 1. read query params ───────────────────────────────────────────
+    rent_min  = int(request.args.get("rent_min", 0) or 0)
+    rent_max  = int(request.args.get("rent_max", 0) or 0)
+    size_min  = int(request.args.get("size_min", 0) or 0)
+    size_max  = int(request.args.get("size_max", 0) or 0)
+    boligtype = request.args.get("boligtype", "").strip().lower()
     if rent_max <= 0:
-        return jsonify({"error":"valid rent_max required"}), 400
+        return jsonify({"error": "valid rent_max required"}), 400
 
+    # ── 2. scrape or load FINN cache ───────────────────────────────────
     t0        = time.perf_counter()
-    cache_key = hashlib.sha1(POLY_PARAM.encode()).hexdigest()
+    cache_key = hashlib.sha1(poly_param.encode()).hexdigest()
 
     raw = load_cache(cache_key, rent_max) \
-          or scrape_listings_polygon(POLY_PARAM, rent_max)
+          or scrape_listings_polygon(poly_param, rent_max)
     save_cache(cache_key, rent_max, raw)
 
+    # ── 3. filter + geocode ────────────────────────────────────────────
     inside, gcache = [], {}
     cnt_price = cnt_size = cnt_type = 0
 
@@ -195,18 +209,18 @@ def api_listings():
         coords = gcache[addr]
         if not coords:                             continue
         lat, lon = coords
-        if PREPARED_UNION.contains(Point(lon, lat)):
+        if prepared_union.contains(Point(lon, lat)):
             ad.update(lat=lat, lon=lon)
             inside.append(ad)
 
     print(f"[Filter] price={cnt_price} size={cnt_size} type={cnt_type} "
           f"inside={len(inside)}  {time.perf_counter()-t0:0.1f}s")
 
+    # ── 4. debug CSVs + response ───────────────────────────────────────
     ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     write_csv(DEBUG_DIR / f"{ts}_raw.csv",    raw)
     write_csv(DEBUG_DIR / f"{ts}_inside.csv", inside)
     return jsonify(inside)
-
 
 # ░░ 6.  /api/reverse_geocode ░░
 @app.get("/api/reverse_geocode")
