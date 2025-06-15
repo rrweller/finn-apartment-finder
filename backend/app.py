@@ -106,6 +106,7 @@ def api_isolines():
     feats_out   = []
     modes       = set()
     intersection= None
+    token       = None                    # ← NEW
 
     from shapely.geometry import shape, MultiPolygon
     for idx, loc in enumerate(locs):
@@ -130,14 +131,13 @@ def api_isolines():
         intersection = poly if intersection is None else intersection.intersection(poly)
 
     if feats_out and intersection and not intersection.is_empty:
-        single = (intersection.convex_hull
-                  if isinstance(intersection, MultiPolygon) else intersection)
-        
-        POLY_PARAM = build_polylocation_param(single)
-        token = hashlib.sha1(POLY_PARAM.encode()).hexdigest()
+        single      = (intersection.convex_hull
+                       if isinstance(intersection, MultiPolygon) else intersection)
+        poly_param  = build_polylocation_param(single)
+        token       = hashlib.sha1(poly_param.encode()).hexdigest()
         (POLY_STORE / f"{token}.wkb").write_bytes(single.wkb)
 
-        # add debug layers
+        # debug layers
         feats_out.append({"type":"Feature","geometry":mapping(intersection),
                           "properties":{"intersection":True}})
         feats_out.append({"type":"Feature","geometry":mapping(single),
@@ -146,12 +146,12 @@ def api_isolines():
         print(f"[Iso] OK  modes={modes}")
     else:
         print("[Iso] ERROR – no usable polygon")
+        return jsonify({"error": "Could not build commute area"}), 400   # ← NEW
 
-    return jsonify({
-        "type": "FeatureCollection",
-        "features": feats_out,
-        "token": token,
-    })
+    payload = {"type": "FeatureCollection", "features": feats_out}
+    if token:
+        payload["token"] = token
+    return jsonify(payload)
 
 
 # ░░ 5.  /api/listings ░░

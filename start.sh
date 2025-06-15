@@ -31,7 +31,7 @@ if [[ -z "${GEOAPIFY_KEY:-}" ]]; then
   echo "GEOAPIFY_KEY=$GEOAPIFY_KEY" >> "$ENVFILE"
 fi
 export GEOAPIFY_KEY
-export FLASK_ENV=production      # just in case any code checks it
+export FLASK_ENV=production
 
 # ───   0a. generate React .env.production  ────────────────────────────────
 ENV_OUT="$FRONTEND/.env.production"
