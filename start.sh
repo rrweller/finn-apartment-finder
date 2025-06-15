@@ -23,6 +23,7 @@ for arg in "$@"; do
   esac
 done
 
+
 # ───   0. GEOAPIFY_KEY persistence  ──────────────────────────────────────────
 [[ -f "$ENVFILE" ]] && source "$ENVFILE"
 if [[ -z "${GEOAPIFY_KEY:-}" ]]; then
@@ -31,6 +32,21 @@ if [[ -z "${GEOAPIFY_KEY:-}" ]]; then
 fi
 export GEOAPIFY_KEY
 export FLASK_ENV=production      # just in case any code checks it
+
+# ───   0a. generate React .env.production  ────────────────────────────────
+ENV_OUT="$FRONTEND/.env.production"
+
+echo "[Frontend] Syncing .env.production from $ENVFILE …"
+grep -E '^(REACT_APP_|GEOAPIFY_KEY=)' "$ENVFILE" 2>/dev/null | sort >"$ENV_OUT.tmp" || true
+
+# update only when content really changed (keeps inode date noise low)
+if ! cmp -s "$ENV_OUT.tmp" "$ENV_OUT" 2>/dev/null; then
+  mv "$ENV_OUT.tmp" "$ENV_OUT"
+  echo "           wrote $(wc -l <"$ENV_OUT") variable(s)"
+else
+  rm "$ENV_OUT.tmp"
+  echo "           unchanged"
+fi
 
 # ───   1. Python venv + deps     ─────────────────────────────────────────────
 echo "[Backend]  Preparing virtual-env …"
