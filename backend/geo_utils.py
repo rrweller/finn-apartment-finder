@@ -9,6 +9,8 @@ import requests
 from geopy.geocoders import Nominatim
 from geopy.extra.rate_limiter import RateLimiter
 from shapely.geometry import Point, shape
+from filelock import FileLock
+import shelve, dbm, pathlib
 
 # ─── Geoapify key ────────────────────────────────────────────────────────────
 GEOAPIFY_KEY = os.getenv("GEOAPIFY_KEY", "").strip()
@@ -31,11 +33,20 @@ def _pick_rev(lat: float):
     return revA if int(lat * 1e5) & 1 == 0 else revB
 
 # ─── persistent geocode cache ─────────────────────────────────────────────────
-CACHE_DB = os.path.join(os.path.dirname(__file__), "geocode_cache.db")
+CACHE_DB   = pathlib.Path(__file__).with_name("geocode_cache.db")
+CACHE_LOCK = FileLock(str(CACHE_DB) + ".lock")
 TTL = datetime.timedelta(hours=24)
 
-def _open_cache(flag: str):
-    return shelve.open(CACHE_DB, flag=flag)
+def _open_cache(flag: str = "r"):
+    try:
+        with CACHE_LOCK:                       # blocks until we have the lock
+            return shelve.open(str(CACHE_DB), flag=flag, writeback=False)
+    except dbm.error as exc:
+        # First run, file missing → retry with 'c'
+        if flag == "r" and "doesn't exist" in str(exc):
+            with CACHE_LOCK:
+                return shelve.open(str(CACHE_DB), flag="c", writeback=False)
+        raise
 
 def _get_cached(address: str):
     db = _open_cache("r")
@@ -51,12 +62,13 @@ def _get_cached(address: str):
     return None
 
 def _set_cached(address: str, lat: float, lon: float):
-    with _open_cache("c") as db:   # acquire write lock briefly
+    with _open_cache("w") as db:
         db[address] = (
             lat,
             lon,
             datetime.datetime.utcnow().isoformat(),
         )
+        db.sync()
 
 @lru_cache(maxsize=4096)
 def geocode_address(address: str) -> Optional[Tuple[float, float]]:
