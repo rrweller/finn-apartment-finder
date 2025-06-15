@@ -23,7 +23,7 @@ const BOLIGTYPE_OPTIONS = [
   { value: "andre",              label: "Andre" },
 ];
 
-const SHOW_QUERY_POLY = true;          // ⇦ turn to false to hide outline
+const SHOW_QUERY_POLY = false;          // ⇦ turn to false to hide outline
 
 export default function App() {
   /* ─── state ─────────────────────────────────────────────────────────── */
