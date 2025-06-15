@@ -10,6 +10,7 @@ from shapely.geometry import Point, Polygon, MultiPolygon, mapping
 from shapely.prepared import prep
 from shapely import wkb
 from filelock import FileLock
+from urllib.parse import urlencode
 
 # ── internal modules ─────────────────────────────────────────────────────
 from finn_scraper import scrape_listings_polygon
@@ -160,7 +161,7 @@ def api_isolines():
 # ░░ 5.  /api/listings ░░
 @app.get("/api/listings")
 def api_listings():
-    # ── 0. retrieve polygon by token ───────────────────────────────────
+    # 0) locate the polygon we saved earlier
     token = request.args.get("token", "").strip()
     if not token:
         return jsonify({"error": "token missing"}), 400
@@ -169,75 +170,89 @@ def api_listings():
     if not poly_path.exists():
         return jsonify({"error": "invalid token"}), 400
 
-    geom            = wkb.loads(poly_path.read_bytes())
-    prepared_union  = prep(geom)                       # fast contains()
-    poly_param      = build_polylocation_param(geom)   # for FINN queries
+    geom           = wkb.loads(poly_path.read_bytes())
+    prepared_union = prep(geom)                       # fast contains()
+    poly_param     = build_polylocation_param(geom)   # for FINN queries
 
-    # ── 1. read query params ───────────────────────────────────────────
+    # 1) read all filters from the URL
     rent_min  = int(request.args.get("rent_min", 0) or 0)
     rent_max  = int(request.args.get("rent_max", 0) or 0)
     size_min  = int(request.args.get("size_min", 0) or 0)
     size_max  = int(request.args.get("size_max", 0) or 0)
-    types_csv      = request.args.get("boligtype", "")
-    type_list       = {v.lower() for v in types_csv.split(",") if v}      # may be empty
 
-    fac_csv        = request.args.get("facilities", "")
-    facility_list   = {v.lower() for v in fac_csv.split(",") if v}
+    type_list  = {v.lower() for v in request.args.get("boligtype", "").split(",") if v}
+    facility_list = {v.lower() for v in request.args.get("facilities", "").split(",") if v}
+    floor_list    = {v.lower() for v in request.args.get("floor", "").split(",") if v}
 
-    floor_csv      = request.args.get("floor", "")
-    floor_list      = {v for v in floor_csv.split(",") if v}
     if rent_max <= 0:
         return jsonify({"error": "valid rent_max required"}), 400
 
-    # ── 2. scrape or load FINN cache ───────────────────────────────────
-    t0        = time.perf_counter()
-    cache_key = hashlib.sha1(poly_param.encode()).hexdigest()
-    cache_fn  = _cache_path(cache_key, rent_max)
-    lock_fn   = str(cache_fn) + ".lock"
-    with FileLock(lock_fn, timeout=570):        # 9½ min < gunicorn 600
+    # 2) build a cache-key that changes whenever *any* filter changes
+    sig = "|".join([
+        poly_param,
+        str(rent_min), str(rent_max),
+        str(size_min), str(size_max),
+        ",".join(sorted(type_list)),
+        ",".join(sorted(facility_list)),
+        ",".join(sorted(floor_list)),
+    ])
+    cache_key = hashlib.sha1(sig.encode()).hexdigest()
+
+    t0 = time.perf_counter()
+    cache_fn = _cache_path(cache_key, rent_max)
+    lock_fn  = str(cache_fn) + ".lock"
+
+    with FileLock(lock_fn, timeout=570):  # 9½ min < gunicorn 600
         raw = load_cache(cache_key, rent_max)
-        if raw is None:           # first worker does the scrape
-            raw = scrape_listings_polygon(
+        if raw is None:
+            # print FINN URL even when we’ll hit the cache next time
+            scrape_listings_polygon(
                 poly_param,
                 rent_min or None,
-                rent_max, 
+                rent_max,
                 property_types = type_list,
                 facilities     = facility_list,
                 floors         = floor_list,
                 area_from      = size_min or None,
                 area_to        = size_max or None,
-                )
+                pages          = 0,          # just URL log
+            )
+
+            raw = scrape_listings_polygon(
+                poly_param,
+                rent_min or None,
+                rent_max,
+                property_types = type_list,
+                facilities     = facility_list,
+                floors         = floor_list,
+                area_from      = size_min or None,
+                area_to        = size_max or None,
+            )
             save_cache(cache_key, rent_max, raw)
 
-    # ── 3. filter + geocode ────────────────────────────────────────────
+    # 3) post-filter by rent/size AND by exact polygon
     inside, gcache = [], {}
-    cnt_price = cnt_size = cnt_type = 0
-
     for ad in raw:
         p = ad.get("price") or 0
-        s = ad.get("size")  or 0
-        t = (ad.get("type") or "").lower()
+        if p < rent_min or p > rent_max:
+            continue
+        s = ad.get("size") or 0
+        if size_min and s < size_min:
+            continue
+        if size_max and s > size_max:
+            continue
 
-        if p < rent_min or p > rent_max:           continue
-        cnt_price += 1
-        cnt_size += 1
-        cnt_type += 1
         addr = f"{ad['address']}, Norway"
         gcache.setdefault(addr, geocode_address(addr))
         coords = gcache[addr]
-        if not coords:                             continue
+        if not coords:
+            continue
         lat, lon = coords
         if prepared_union.contains(Point(lon, lat)):
             ad.update(lat=lat, lon=lon)
             inside.append(ad)
 
-    print(f"[Filter] price={cnt_price} size={cnt_size} type={cnt_type} "
-          f"inside={len(inside)}  {time.perf_counter()-t0:0.1f}s")
-
-    # ── 4. debug CSVs + response ───────────────────────────────────────
-    ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    write_csv(DEBUG_DIR / f"{ts}_raw.csv",    raw)
-    write_csv(DEBUG_DIR / f"{ts}_inside.csv", inside)
+    print(f"[Filter] inside={len(inside)}  {time.perf_counter()-t0:0.1f}s")
     return jsonify(inside)
 
 # ░░ 6.  /api/reverse_geocode ░░

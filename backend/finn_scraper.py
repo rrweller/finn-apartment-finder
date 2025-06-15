@@ -69,7 +69,11 @@ def scrape_listings_polygon(
         area_from: int | None = None,
         area_to:   int | None = None,
     ):
+    """Fetch FINN result pages for one polygon + filter set.
+       If pages == 0 we only print the URL and return []."""
     base = "https://www.finn.no/realestate/lettings/search.html"
+
+    # build query param list exactly like FINN’s own UI
     params: List[Tuple[str, str]] = [
         ("polylocation", polylocation),
         ("price_to",     str(price_max)),
@@ -92,14 +96,20 @@ def scrape_listings_polygon(
     if area_to   is not None:
         params.append(("area_to",   str(area_to)))
 
-    rows = []
+    # log once – always
     print("[Finn URL]", f"{base}?{urlencode(params, doseq=True)}")
+
+    # early-exit mode used by api_listings to just print the URL
+    if pages == 0:
+        return []
+
+    rows: List[Dict] = []
 
     for pg in range(1, pages + 1):
         page_params = params + [("page", str(pg))]
         r = requests.get(
             base,
-            params=page_params,        # every filter travels along
+            params=page_params,
             headers=HEADERS,
             timeout=15,
         )
@@ -108,11 +118,12 @@ def scrape_listings_polygon(
         soup = BeautifulSoup(r.text, "html.parser")
         arts = soup.find_all("article")
         if not arts:
-            break            # last page reached
+            break          # last page reached
         for art in arts:
             d = _parse(art)
             if d:
                 rows.append(d)
-        time.sleep(0.5)      # be polite
+        time.sleep(0.5)    # be polite to FINN
+
     print(f"[Finn] harvested {len(rows)} rows (polygon)")
     return rows
