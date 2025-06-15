@@ -35,7 +35,7 @@ export default function App() {
   const handleAddRow = () =>
     setWorkLocs((prev) => [
       ...prev,
-      { address: "", time: 20, mode: "drive", lat: null, lon: null },
+      { address: "", time: 15, mode: "transit", lat: null, lon: null },
     ]);
 
   const handleRemoveRow = (idx) =>
@@ -186,11 +186,10 @@ export default function App() {
                   }
                 />
                 <span className="label-min">min</span>
-              </div>
-              {/* Line 2 */}
-              <div className="form-group">
+
+                {/* mode selector now lives on the same row */}
                 <select
-                  className="select-mode"
+                  className="select-mode commute-mode"
                   value={row.mode}
                   onChange={(e) =>
                     setWorkLocs((prev) =>
@@ -207,6 +206,7 @@ export default function App() {
                   ))}
                 </select>
               </div>
+
               {/* Line 3 */}
               <div className="form-group">
                 {idx === workLocs.length - 1 && (

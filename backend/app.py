@@ -112,8 +112,8 @@ def api_isolines():
 
     from shapely.geometry import shape, MultiPolygon
     for idx, loc in enumerate(locs):
-        minutes = int(loc.get("time", 20))
-        mode    = loc.get("mode", "drive")
+        minutes = int(loc.get("time", 15))
+        mode    = loc.get("mode", "transit")
 
         lat, lon = (loc.get("lat"), loc.get("lon")) if "lat" in loc else \
                    geocode_address(f"{loc.get('address','')}, Norway") or (None, None)

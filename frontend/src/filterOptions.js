@@ -1,3 +1,4 @@
+/* filterOptions.js */
 export const MODE_OPTIONS = [
   { value: "drive",   label: "Car 🚗" },
   { value: "transit", label: "Transit 🚌" },
