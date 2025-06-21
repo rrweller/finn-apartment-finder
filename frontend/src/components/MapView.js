@@ -181,8 +181,13 @@ export default function MapView({
               icon={PriceIcon(l.price)}
               eventHandlers={{ click: () => window.open(l.url, "_blank") }}
             >
-              <Tooltip direction="top" offset={[0, -12]} opacity={0.9}>
-                {l.title}
+              <Tooltip direction="top" offset={[0, -16]} opacity={0.9}>
+                <div className="ad-tooltip">
+                  {l.thumb && (
+                    <img src={l.thumb} alt="" className="ad-thumb" />
+                  )}
+                  <div>{l.title}</div>
+                </div>
               </Tooltip>
             </Marker>
           ))}

@@ -47,6 +47,10 @@ def _parse(article) -> Dict:
         dt  = desc.get_text(" ", strip=True)
         typ = dt.split("∙")[0].strip()
 
+    # thumbnail
+    img   = article.find("img", src=True)
+    thumb = img["src"] if img else None
+
     return {
         "title":   title,
         "address": address,
@@ -54,6 +58,7 @@ def _parse(article) -> Dict:
         "size":    s,
         "type":    typ,
         "url":     url,
+        "thumb":   thumb,
     }
 
 # ─── public scraper using geoPolygon ────────────────────────────────────────
