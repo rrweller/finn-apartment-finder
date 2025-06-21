@@ -83,7 +83,10 @@ input, select {
 .input-address   { flex: 1; }
 .input-time,
 .input-rent,
-.input-size      { width: 70px; }
+.input-size{ 
+  width: 70px; 
+  text-align: right;
+}
 
 /* 3.2 buttons ---------------------------------------------------------- */
 button           { font-size: 14px; border: none; border-radius: 6px; cursor: pointer; }

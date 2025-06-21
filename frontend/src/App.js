@@ -150,7 +150,7 @@ export default function App() {
                 </button>
                 <input
                   type="text"
-                  placeholder="Work address"
+                  placeholder="Arbeidsadresse"
                   value={row.address}
                   required
                   className="input-address"
@@ -215,7 +215,7 @@ export default function App() {
                     className="btn-add"
                     onClick={handleAddRow}
                   >
-                    + address
+                    + adresse
                   </button>
                 )}
                 {workLocs.length > 1 && (
@@ -224,7 +224,7 @@ export default function App() {
                     className="btn-remove"
                     onClick={() => handleRemoveRow(idx)}
                   >
-                    – address
+                    – adresse
                   </button>
                 )}
               </div>
@@ -233,12 +233,12 @@ export default function App() {
 
           {/* Rent */}
           <div className="form-group">
-            <label className="label-inline">Rent</label>
+            <label className="label-inline">Månedsleie</label>
             <input
               type="number"
               min="0"
               className="input-rent"
-              placeholder="Min kr"
+              placeholder="Fra kr"
               value={rentMin}
               onChange={(e) => setRentMin(e.target.value)}
             />
@@ -247,7 +247,7 @@ export default function App() {
               type="number"
               min="0"
               className="input-rent"
-              placeholder="Max kr"
+              placeholder="Til kr"
               value={rentMax}
               onChange={(e) => setRentMax(e.target.value)}
             />
@@ -256,12 +256,12 @@ export default function App() {
 
           {/* Size */}
           <div className="form-group">
-            <label className="label-inline">Size</label>
+            <label className="label-inline">Størrelse</label>
             <input
               type="number"
               min="0"
               className="input-size"
-              placeholder="Min m²"
+              placeholder="Fra m²"
               value={sizeMin}
               onChange={(e) => setSizeMin(e.target.value)}
             />
@@ -270,7 +270,7 @@ export default function App() {
               type="number"
               min="0"
               className="input-size"
-              placeholder="Max m²"
+              placeholder="Til m²"
               value={sizeMax}
               onChange={(e) => setSizeMax(e.target.value)}
             />
@@ -285,14 +285,14 @@ export default function App() {
 
           {/* Type */}
           <div className="form-group">
-            <label className="label-inline">Type</label>
+            <label className="label-inline">Boligtype</label>
             <div style={{ flex: 1 }}>
               <Select
                 options={BOLIGTYPE_OPTIONS}
                 value={boligtypes}
                 onChange={setBoligtypes}
                 isMulti
-                placeholder="All types"
+                placeholder="Alle"
                 styles={selectStyles}
               />
            </div>
@@ -300,14 +300,14 @@ export default function App() {
 
           {/* Facilities */}
           <div className="form-group">
-            <label className="label-inline">Facil.</label>
+            <label className="label-inline">Fasiliteter</label>
             <div style={{ flex: 1 }}>
               <Select
                 options={FACILITY_OPTS}
                 value={facilities}
                 onChange={setFacilities}
                 isMulti
-                placeholder="Select…"
+                placeholder="Velg…"
                 styles={selectStyles}
               />
             </div>
@@ -315,14 +315,14 @@ export default function App() {
 
           {/* Floor */}
           <div className="form-group">
-            <label className="label-inline">Floor</label>
+            <label className="label-inline">Etasje</label>
             <div style={{ flex: 1 }}>
               <Select
                 options={FLOOR_OPTS}
                 value={floors}
                 onChange={setFloors}
                 isMulti
-                placeholder="Any"
+                placeholder="Alle"
                 styles={selectStyles}
               />
             </div>
@@ -331,7 +331,7 @@ export default function App() {
           {/* Search */}
           <div className="form-group">
             <button type="submit" className="btn-search" disabled={loading}>
-              {loading ? "Searching…" : "Search"}
+              {loading ? "Søker…" : "Søk"}
             </button>
           </div>
         </form>
@@ -339,13 +339,13 @@ export default function App() {
         {/* Loading indicator */}
         {loading && (
           <div className="loading-indicator">
-            <div className="spinner" /> Loading apartments…
+            <div className="spinner" /> Finner leiligheter…
           </div>
         )}
         {/* Results */}
         {!loading && listings.length > 0 && (
           <div className="results-count">
-            Found {listings.length} apartments
+            Fant {listings.length} leiligheter
           </div>
         )}
       </aside>
