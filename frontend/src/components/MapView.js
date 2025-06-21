@@ -1,5 +1,5 @@
 /*MapView.js*/
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import {
   MapContainer,
   TileLayer,
@@ -21,6 +21,12 @@ import "leaflet.pattern";                       // npm i leaflet.pattern
 const INTERSECTION_COLOR  = "#00e0ff";         // cyan for area, outline, stripes
 const QUERY_STROKE        = "#ffd600";         // yellow convex hull outline
 const STADIA_KEY = process.env.REACT_APP_STADIA_KEY;
+
+const routeStyle = {
+  color: "#ff4444",
+  weight: 3,
+  dashArray: "6 6"
+};
 
 /* ─── icon helpers ───────────────────────────────────────────────────── */
 function PriceIcon(price) {
@@ -78,7 +84,46 @@ export default function MapView({
   onPick,
 }) {
   const [stripePattern, setStripePattern] = useState(null);
+  const [activeRoutes, setActiveRoutes]   = useState([]);
+  const routeCacheRef = useRef({});           // ad.url → features[]
   const handlePatternReady = useCallback(p => setStripePattern(p), []);
+
+  /* helper to request & cache -------------------------------- */
+  const getRoutes = useCallback(
+    async ad => {
+      const cache = routeCacheRef.current;
+      if (cache[ad.url]) return cache[ad.url];
+
+      const targets = workPins
+        .filter(p => p.lat && p.lon)
+        .map((p, idx) => ({
+          lat:  p.lat,
+          lon:  p.lon,
+          mode: p.mode || "drive",
+          locId: idx,
+        }));
+      if (!targets.length) return [];
+
+      const res = await fetch("/api/routes", {
+        method:  "POST",
+        headers: { "Content-Type":"application/json" },
+        body:    JSON.stringify({ origin:{ lat:ad.lat, lon:ad.lon }, targets }),
+      });
+      if (!res.ok) return [];
+
+      const data = await res.json();          // FeatureCollection
+      cache[ad.url] = data.features;          // memoise
+      return data.features;
+    },
+    [workPins]
+  );
+
+  /* mouse handlers ----------------------------------------- */
+  const handleOver = useCallback(
+    ad => { getRoutes(ad).then(setActiveRoutes); },
+    [getRoutes]
+  );
+  const handleOut  = () => setActiveRoutes([]);
 
   /* hide yellow outline when toggled off ------------------------------- */
   const geojsonToDraw = useMemo(() => {
@@ -168,6 +213,16 @@ export default function MapView({
             </Marker>
           ))}
 
+        {/* draw current route lines */}
+        {activeRoutes.length > 0 && (
+          <GeoJSON
+            key={`routes-${activeRoutes.length}`}
+            data={{ type: "FeatureCollection", features: activeRoutes }}
+            style={routeStyle}
+            interactive={false}
+          />
+        )}
+
         {/* clustered FINN ads */}
         <MarkerClusterGroup
           spiderfyOnMaxZoom
@@ -179,7 +234,11 @@ export default function MapView({
               key={l.url}
               position={[l.lat, l.lon]}
               icon={PriceIcon(l.price)}
-              eventHandlers={{ click: () => window.open(l.url, "_blank") }}
+              eventHandlers={{
+                click:      () => window.open(l.url, "_blank"),
+                mouseover:  () => handleOver(l),
+                mouseout:   handleOut,
+              }}
             >
               <Tooltip direction="top" offset={[0, -16]} opacity={0.9}>
                 <div className="ad-tooltip">

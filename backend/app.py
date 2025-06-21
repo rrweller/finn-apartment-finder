@@ -1,6 +1,6 @@
 #app.py
 # ── stdlib ───────────────────────────────────────────────────────────────
-import csv, datetime, json, pathlib, time, hashlib, os, tempfile, shutil, pickle
+import csv, datetime, json, pathlib, time, hashlib, os, tempfile, shutil, requests
 from typing import List, Tuple
 
 # ── 3rd-party ────────────────────────────────────────────────────────────
@@ -14,7 +14,7 @@ from urllib.parse import urlencode
 
 # ── internal modules ─────────────────────────────────────────────────────
 from finn_scraper import scrape_listings_polygon
-from geo_utils    import geocode_address, reverse_geocode, fetch_isoline
+from geo_utils    import geocode_address, reverse_geocode, fetch_isoline, GEOAPIFY_KEY
 
 # ─────────────────────────────────────────────────────────────────────────
 
@@ -204,7 +204,6 @@ def api_listings():
     with FileLock(lock_fn, timeout=570):  # 9½ min < gunicorn 600
         raw = load_cache(cache_key, rent_max)
         if raw is None:
-            # print FINN URL even when we’ll hit the cache next time
             scrape_listings_polygon(
                 poly_param,
                 rent_min or None,
@@ -214,7 +213,7 @@ def api_listings():
                 floors         = floor_list,
                 area_from      = size_min or None,
                 area_to        = size_max or None,
-                pages          = 0,          # just URL log
+                pages          = 0,
             )
 
             raw = scrape_listings_polygon(
@@ -265,8 +264,102 @@ def api_reverse():
     addr = reverse_geocode(lat, lon)
     return jsonify({"address":addr or ""}), (200 if addr else 404)
 
+# ░░ 7.  /api/routes – returns LineStrings origin→all work addresses ░░
+ROUTE_DIR = CACHE_DIR / "routes"; ROUTE_DIR.mkdir(exist_ok=True)
+ROUTE_TTL = datetime.timedelta(hours=24)
 
-# ░░ 7.  dev entry-point ░░
+def _route_cache_path(key: str):
+    return ROUTE_DIR / f"{key}.json"
+
+def _load_route_cache(key: str):
+    fn = _route_cache_path(key)
+    if not fn.exists(): return None
+    meta = json.loads(fn.read_text(encoding="utf-8"))
+    ts = datetime.datetime.fromisoformat(meta["ts"])
+    if datetime.datetime.utcnow() - ts < ROUTE_TTL:
+        return meta["geojson"]
+    return None
+
+def _save_route_cache(key: str, geojson: dict):
+    _atomic_write(
+        _route_cache_path(key),
+        {"ts": datetime.datetime.utcnow().isoformat(), "geojson": geojson},
+    )
+
+def _fetch_route(olat, olon, dlat, dlon, pref_mode):
+    if pref_mode in ("transit", "approximated_transit"):
+        modes = [pref_mode,
+                 "approximated_transit",
+                 "walk"] 
+    else:
+        modes = [pref_mode, "walk", "approximated_transit"]
+
+    for mode in modes:
+        params = {
+            "waypoints": f"{olat},{olon}|{dlat},{dlon}",
+            "mode":      mode,
+            "apiKey":    GEOAPIFY_KEY,
+            "details":   "instruction_details",
+            "format":    "geojson",
+        }
+        try:
+            r = requests.get(
+                "https://api.geoapify.com/v1/routing",
+                params=params, timeout=20,
+                headers={"User-Agent": "CommuteFinder/3.6"},
+            )
+            if r.status_code == 403 or r.status_code == 429:
+                r.raise_for_status()
+
+            js = r.json()
+            if js.get("features"):
+                if mode != pref_mode:
+                    print(f"[Route] fallback {pref_mode}→{mode}")
+                return js
+        except Exception as exc:
+            print(f"[Route] {mode} failed – {exc}")
+
+    return {} 
+    
+@app.post("/api/routes")
+def api_routes():
+    js = request.get_json(force=True)
+    try:
+        olat, olon = js["origin"]["lat"], js["origin"]["lon"]
+        targets    = js["targets"]
+    except (KeyError, TypeError):
+        return jsonify({"error":"Bad payload"}), 400
+
+    feats = []
+    for t in targets:
+        dlat, dlon = t["lat"], t["lon"]
+        mode       = t.get("mode","drive") or "drive"
+        locId      = t.get("locId", 0)
+
+        cache_key = hashlib.sha1(
+            f"{olat:.5f},{olon:.5f}->{dlat:.5f},{dlon:.5f}@{mode}".encode()
+        ).hexdigest()
+
+        geo = _load_route_cache(cache_key)
+        if geo is None:
+            try:
+                geo = _fetch_route(olat, olon, dlat, dlon, mode)
+                _save_route_cache(cache_key, geo)
+            except Exception as e:
+                print("[Route] ERROR fetch", e)
+                continue
+        if not geo or not geo.get("features"):
+            print("[Route] WARN empty response", cache_key)
+            continue  
+
+        gfeat = geo["features"][0]
+        gfeat.setdefault("properties", {}).update(locId=locId)
+        feats.append(gfeat)
+
+    return jsonify({"type":"FeatureCollection", "features":feats})
+
+
+# ░░ 8.  dev entry-point ░░
 if __name__ == "__main__":
     debug = os.environ.get("FLASK_ENV") != "production"
     host  = "127.0.0.1" if debug else "0.0.0.0"
