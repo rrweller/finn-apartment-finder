@@ -47,6 +47,14 @@ export default function App() {
 
   const activatePickMode = (idx) => setAwaitingPickRow(idx);
 
+  const resolveAddress = async (raw) => {
+    if (!raw.trim()) return null;
+    try {
+      const r = await fetch(`/api/geocode?q=${encodeURIComponent(raw)}`);
+      return r.ok ? await r.json() : null;
+    } catch { return null; }
+  };
+
   /* ─── reverse-geocode after map click ─────────────────────────────── */
   const handleMapPick = async latlng => {
     if (awaitingPickRow === null) return;
@@ -181,12 +189,25 @@ export default function App() {
                   required
                   className="input-address"
                   onChange={(e) =>
-                    setWorkLocs((prev) =>
+                    setWorkLocs(prev =>
                       prev.map((r, i) =>
-                        i === idx ? { ...r, address: e.target.value } : r
+                        i === idx ? { ...r, address: e.target.value, lat:null, lon:null } : r
                       )
                     )
                   }
+                  onBlur={async e => {
+                    // already has coords? – skip
+                    if (row.lat && row.lon) return;
+                    const res = await resolveAddress(e.target.value);
+                    if (!res) return;               // keep whatever user typed
+                    setWorkLocs(prev =>
+                      prev.map((r, i) =>
+                        i === idx
+                          ? { ...r, address: res.address, lat: res.lat, lon: res.lon }
+                          : r
+                      )
+                    );
+                  }}
                 />
                 {/* coloured dot */}
                 <span

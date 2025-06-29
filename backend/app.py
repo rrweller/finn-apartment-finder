@@ -281,6 +281,22 @@ def api_reverse():
     addr = reverse_geocode(lat, lon)
     return jsonify({"address":addr or ""}), (200 if addr else 404)
 
+# ░░ 6b. /api/geocode – fuzzy address → lat/lon + canonical text ░░
+@app.get("/api/geocode")
+def api_geocode():
+    q = request.args.get("q", "").strip()
+    if not q:
+        return jsonify({"error": "q required"}), 400
+
+    # first try with ", Norway" – covers most partial inputs
+    coords = geocode_address(f"{q}, Norway") or geocode_address(q)
+    if not coords:
+        return jsonify({"error": "not found"}), 404
+
+    lat, lon = coords
+    nice = reverse_geocode(lat, lon) or q
+    return jsonify({"lat": lat, "lon": lon, "address": nice})
+
 # ░░ 7.  /api/routes – returns LineStrings origin→all work addresses ░░
 ROUTE_DIR = CACHE_DIR / "routes"; ROUTE_DIR.mkdir(exist_ok=True)
 ROUTE_TTL = datetime.timedelta(hours=24)
