@@ -16,7 +16,7 @@ export default function App() {
   ]);
 
   const [rentMin,   setRentMin]   = useState(0);
-  const [rentMax,   setRentMax]   = useState(25000);
+  const [rentMax,   setRentMax]   = useState(0);
   const [sizeMin,   setSizeMin]   = useState(0);
   const [sizeMax,   setSizeMax]   = useState(0);
   const [bedrooms, setBedrooms] = useState(0);
@@ -31,6 +31,9 @@ export default function App() {
   const [listings,      setListings]    = useState([]);
   const [awaitingPickRow, setAwaitingPickRow] = useState(null);
   const [loading,       setLoading]      = useState(false);
+
+  const fmtThousands = n =>
+  n ? n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".") : "";
 
   /* ─── handlers ──────────────────────────────────────────────────────── */
   const handleAddRow = () =>
@@ -107,6 +110,8 @@ export default function App() {
       })).json();
       if (!iso.features?.length) { alert("Could not build commute area."); return; }
       setIsolineData(iso);
+      const cleanMin = Number(rentMin) || 0;
+      const cleanMax = Number(rentMax) || 0;
 
       /* 2) FINN listings */
       const qs = new URLSearchParams({
@@ -120,6 +125,8 @@ export default function App() {
         token: iso.token,
       });
       qs.set("mode", listingMode);
+      qs.set("rent_min", cleanMin);
+      qs.set("rent_max", cleanMax);
       if (bedrooms) qs.set("min_bedrooms", bedrooms);
 
       const res = await fetch(`/api/listings?${qs}`);
@@ -256,24 +263,44 @@ export default function App() {
               {listingMode === "rent" ? "Månedsleie" : "Totalpris"}
             </label>
             <input
-              type="number"
+              /* text when buying (so we can show dots), number otherwise */
+              type={listingMode === "buy" ? "text" : "number"}
+              inputMode="numeric"
               min="0"
               className="input-rent"
-              placeholder="Fra kr"
-              value={rentMin}
-              onChange={(e) => setRentMin(e.target.value)}
+              placeholder={listingMode === "buy" ? "0" : "Fra kr"}
+              value={
+                listingMode === "buy"
+                  ? fmtThousands(rentMin)    // or rentMax in the second field
+                  : rentMin                  // or rentMax
+              }
+              /* strip non-digits, keep clean number in state */
+              onChange={e => {
+                const digitsOnly = e.target.value.replace(/\D/g, "");
+                setRentMin(Number(digitsOnly));      // use setRentMax for the second field
+              }}
             />
             <span className="label-dash">–</span>
             <input
-              type="number"
+              /* text when buying (so we can show dots), number otherwise */
+              type={listingMode === "buy" ? "text" : "number"}
+              inputMode="numeric"
               min="0"
               className="input-rent"
-              placeholder="Til kr"
-              value={rentMax}
-              onChange={(e) => setRentMax(e.target.value)}
+              placeholder={listingMode === "buy" ? "0" : "Fra kr"}
+              value={
+                listingMode === "buy"
+                  ? fmtThousands(rentMax)    // or rentMax in the second field
+                  : rentMax                  // or rentMax
+              }
+              /* strip non-digits, keep clean number in state */
+              onChange={e => {
+                const digitsOnly = e.target.value.replace(/\D/g, "");
+                setRentMax(Number(digitsOnly));      // use setRentMax for the second field
+              }}
             />
             <span className="label-unit">
-              {listingMode === "rent" ? "kr/mnd" : "kr"}
+              {listingMode === "rent" ? "" : ""}
             </span>
           </div>
 
@@ -297,7 +324,7 @@ export default function App() {
               value={sizeMax}
               onChange={(e) => setSizeMax(e.target.value)}
             />
-            <span className="label-unit">m²</span>
+            <span className="label-unit"></span>
           </div>
 
           {/* Bedrooms */}
@@ -362,13 +389,13 @@ export default function App() {
         {/* Loading indicator */}
         {loading && (
           <div className="loading-indicator">
-            <div className="spinner" /> Finner leiligheter…
+            <div className="spinner" /> Finner boliger…
           </div>
         )}
         {/* Results */}
         {!loading && listings.length > 0 && (
           <div className="results-count">
-            Fant {listings.length} {listingMode === "rent" ? "leiligheter" : "boliger"}
+            Fant {listings.length} {listingMode === "rent" ? "boliger" : "boliger"}
           </div>
         )}
       </aside>
