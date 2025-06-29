@@ -74,6 +74,29 @@ function StripePatternDef({ onReady }) {
   return null;
 }
 
+function spreadDuplicates(listings) {
+  const grouped = {};
+  listings.forEach(ad => {
+    const key = `${ad.lat.toFixed(6)}|${ad.lon.toFixed(6)}`; // 0.1-m grid
+    (grouped[key] = grouped[key] || []).push(ad);
+  });
+
+  const R = 111_320;               // metres per degree latitude
+  const Δ = 24;                      // radius in metres for jitter
+
+  const out = [];
+  Object.values(grouped).forEach(arr => {
+    if (arr.length === 1) { out.push(arr[0]); return; }
+    arr.forEach((ad, idx) => {
+      const angle = (2 * Math.PI * idx) / arr.length;
+      const dx = (Δ * Math.cos(angle)) / R;          // deg lon≈deg lat here
+      const dy = (Δ * Math.sin(angle)) / R;
+      out.push({ ...ad, lat: ad.lat + dy, lon: ad.lon + dx });
+    });
+  });
+  return out;
+}
+
 /* ─── main component ──────────────────────────────────────────────────── */
 export default function MapView({
   isolineData,
@@ -225,11 +248,13 @@ export default function MapView({
 
         {/* clustered FINN ads */}
         <MarkerClusterGroup
-          spiderfyOnMaxZoom
+          spiderfyOnMaxZoom            /* keep */
+          spiderfyDistanceMultiplier={2.2}   /* bubbles further apart */
+          disableClusteringAtZoom={17} /* auto-expand at house level */
           showCoverageOnHover={false}
           chunkedLoading
         >
-          {listings.map(l => (
+          {useMemo(() => spreadDuplicates(listings), [listings]).map(l => (
             <Marker
               key={l.url}
               position={[l.lat, l.lon]}

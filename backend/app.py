@@ -69,13 +69,25 @@ def _atomic_write(path: pathlib.Path, data: dict):
 def _cache_path(key: str, rent_max: int) -> pathlib.Path:
     return CACHE_DIR / f"{key}_{rent_max}.json"
 
+def _purge_old_cache(days: int = 7):
+    cutoff = datetime.datetime.utcnow() - datetime.timedelta(days=days)
+    for fp in CACHE_DIR.glob("*.json"):
+        try:
+            meta = json.loads(fp.read_text(encoding="utf-8"))
+            ts   = datetime.datetime.fromisoformat(meta.get("ts", "1970-01-01"))
+            if ts < cutoff:
+                fp.unlink(missing_ok=True)
+        except Exception:
+            # corrupted or legacy file → just delete
+            fp.unlink(missing_ok=True)
+
 def load_cache(key: str, rent_max: int):
     fn = _cache_path(key, rent_max)
     if not fn.exists():
         return None
     meta = json.loads(fn.read_text(encoding="utf-8"))
     ts   = datetime.datetime.fromisoformat(meta["ts"])
-    if datetime.datetime.utcnow() - ts < datetime.timedelta(hours=24):
+    if datetime.datetime.utcnow() - ts < datetime.timedelta(hours=72):
         print(f"[Cache]  HIT  {key}")
         return meta["raw"]
     print(f"[Cache]  STALE {key}")
@@ -86,6 +98,8 @@ def save_cache(key: str, rent_max: int, raw: List[dict]):
     payload = {"ts": datetime.datetime.utcnow().isoformat(), "raw": raw}
     _atomic_write(fn, payload)
     print(f"[Cache]  SAVED {key}")
+
+    _purge_old_cache(7) 
 
 
 # ░░ 3.  FINN poly-location helper ░░
@@ -186,7 +200,7 @@ def api_listings():
     floor_list    = {v.lower() for v in request.args.get("floor", "").split(",") if v}
 
     if rent_max <= 0:
-        return jsonify({"error": "valid rent_max required"}), 400
+        rent_max = 9_999_999
 
     # 2) build a cache-key that changes whenever *any* filter changes
     sig = "|".join([
