@@ -163,6 +163,7 @@ def api_isolines():
 def api_listings():
     # 0) locate the polygon we saved earlier
     token = request.args.get("token", "").strip()
+    listing_mode = request.args.get("mode", "rent").lower()
     if not token:
         return jsonify({"error": "token missing"}), 400
 
@@ -194,6 +195,7 @@ def api_listings():
         ",".join(sorted(type_list)),
         ",".join(sorted(facility_list)),
         ",".join(sorted(floor_list)),
+        listing_mode,                       # NEW
     ])
     cache_key = hashlib.sha1(sig.encode()).hexdigest()
 
@@ -220,6 +222,7 @@ def api_listings():
                 poly_param,
                 rent_min or None,
                 rent_max,
+                listing_mode = listing_mode,     # NEW
                 property_types = type_list,
                 facilities     = facility_list,
                 floors         = floor_list,

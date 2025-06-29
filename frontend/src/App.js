@@ -10,6 +10,7 @@ const SHOW_QUERY_POLY = false;          // ⇦ turn to false to hide outline
 
 export default function App() {
   /* ─── state ─────────────────────────────────────────────────────────── */
+  const [listingMode, setListingMode] = useState("rent");
   const [workLocs, setWorkLocs] = useState([
     { address: "", time: 15, mode: "transit", lat: null, lon: null },
   ]);
@@ -118,6 +119,7 @@ export default function App() {
         floor: floorCSV,
         token: iso.token,
       });
+      qs.set("mode", listingMode);
       if (bedrooms) qs.set("min_bedrooms", bedrooms);
 
       const res = await fetch(`/api/listings?${qs}`);
@@ -135,6 +137,23 @@ export default function App() {
   return (
     <div className="layout-row">
       <aside className="sidebar">
+        {/* ─── Rent / Buy tabs ─────────────────────────────── */}
+        <div className="tabs">
+          <button
+            type="button"
+            className={listingMode === "rent" ? "tab-btn active" : "tab-btn"}
+            onClick={() => setListingMode("rent")}
+          >
+            Leie
+          </button>
+          <button
+            type="button"
+            className={listingMode === "buy" ? "tab-btn active" : "tab-btn"}
+            onClick={() => setListingMode("buy")}
+          >
+            Kjøpe
+          </button>
+        </div>
         <form className="form-wrap" onSubmit={handleSearch}>
           {/* Work addresses */}
           {workLocs.map((row, idx) => (
@@ -233,7 +252,9 @@ export default function App() {
 
           {/* Rent */}
           <div className="form-group">
-            <label className="label-inline">Månedsleie</label>
+            <label className="label-inline">
+              {listingMode === "rent" ? "Månedsleie" : "Totalpris"}
+            </label>
             <input
               type="number"
               min="0"
@@ -251,7 +272,9 @@ export default function App() {
               value={rentMax}
               onChange={(e) => setRentMax(e.target.value)}
             />
-            <span className="label-unit">kr/mnd</span>
+            <span className="label-unit">
+              {listingMode === "rent" ? "kr/mnd" : "kr"}
+            </span>
           </div>
 
           {/* Size */}
@@ -345,7 +368,7 @@ export default function App() {
         {/* Results */}
         {!loading && listings.length > 0 && (
           <div className="results-count">
-            Fant {listings.length} leiligheter
+            Fant {listings.length} {listingMode === "rent" ? "leiligheter" : "boliger"}
           </div>
         )}
       </aside>

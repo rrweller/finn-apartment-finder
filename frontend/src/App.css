@@ -46,6 +46,13 @@ html, body, #root {
 /* 2 ── Layout  --------------------------------------------------------- */
 .layout-row { display: flex; height: 100%; }
 
+/* ─── rent / buy tabs ─────────────────────────────── */
+.tabs      { display:flex; gap:12px; margin-bottom:24px; }
+.tab-btn   { flex:1; background:var(--input-bg); color:var(--text-secondary);
+             padding:8px 0; border:1px solid var(--input-border);
+             border-radius:6px; cursor:pointer; transition:.2s; }
+.tab-btn.active { background:var(--accent); color:var(--btn-text); }
+
 .sidebar {
   width: 360px;
   background: var(--surface);

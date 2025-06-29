@@ -11,7 +11,7 @@ from bs4 import BeautifulSoup
 
 HEADERS = {"User-Agent": "CommuteFinder/3.0"}
 
-LIST_RX   = re.compile(r"/realestate/lettings/ad\.html\?finnkode=")
+LIST_RX = re.compile(r"/realestate/(lettings|homes)/ad\.html\?finnkode=")
 PRICE_RX  = re.compile(r"(\d[\d\s\u00A0]*kr)")
 SIZE_RX   = re.compile(r"(\d+)\s*m²")
 DIGITS    = re.compile(r"[^\d]")
@@ -67,6 +67,7 @@ def scrape_listings_polygon(
         price_min: int | None,
         price_max: int,
         *,
+        listing_mode: str = "rent",          # "rent" | "buy"
         pages: int = 50,
         property_types: Sequence[str] = (),
         facilities:     Sequence[str] = (),
@@ -76,14 +77,20 @@ def scrape_listings_polygon(
         bedrooms_min: int | None = None,
     ):
     """Fetch FINN result pages for one polygon + filter set."""
-    base = "https://www.finn.no/realestate/lettings/search.html"
+
+    if listing_mode == "buy":
+        base = "https://www.finn.no/realestate/homes/search.html"
+        price_from_key, price_to_key = "price_collective_from", "price_collective_to"
+    else:                                   # default = rent
+        base = "https://www.finn.no/realestate/lettings/search.html"
+        price_from_key, price_to_key = "price_from", "price_to"
 
     params: list[tuple[str, str]] = [
         ("polylocation", polylocation),
-        ("price_to",     str(price_max)),
+        (price_to_key,   str(price_max)),
     ]
     if price_min:
-        params.append(("price_from", str(price_min)))
+        params.append((price_from_key, str(price_min)))
     if bedrooms_min:
         params.append(("min_bedrooms", str(bedrooms_min)))
 
